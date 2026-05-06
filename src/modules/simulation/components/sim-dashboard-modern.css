@@ -1,0 +1,102 @@
+@import "https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Aldrich&display=swap";
+
+:root {
+    --sim-text-primary: #e0f2fe;
+    --sim-text-secondary: #7dd3fc;
+    --sim-text-dim: #0284c7;
+    --sim-accent-cyan: #0ff;
+    --sim-accent-green: #22c55e;
+    --font-sim-header: "Aldrich", sans-serif;
+    --font-sim-mono: "Share Tech Mono", monospace;
+}
+
+.sim-ui-modern {
+    pointer-events: none;
+    width: 100vw;
+    height: 100vh;
+    font-family: var(--font-sim-mono);
+    color: var(--sim-text-primary);
+    z-index: 100;
+    position: absolute;
+    top: 0;
+    left: 0;
+    overflow: hidden;
+}
+
+.intel-tooltip-modern {
+    pointer-events: none;
+    z-index: 9999;
+    backdrop-filter: blur(8px);
+    background-color: #000a19d9;
+    background-image:
+        linear-gradient(var(--sim-accent-cyan), var(--sim-accent-cyan)),
+        linear-gradient(var(--sim-accent-cyan), var(--sim-accent-cyan)),
+        linear-gradient(var(--sim-accent-cyan), var(--sim-accent-cyan)),
+        linear-gradient(var(--sim-accent-cyan), var(--sim-accent-cyan)),
+        linear-gradient(var(--sim-accent-cyan), var(--sim-accent-cyan)),
+        linear-gradient(var(--sim-accent-cyan), var(--sim-accent-cyan)),
+        linear-gradient(var(--sim-accent-cyan), var(--sim-accent-cyan)),
+        linear-gradient(var(--sim-accent-cyan), var(--sim-accent-cyan));
+    background-position: 0 0, 0 0, 100% 0, 100% 0, 0 100%, 0 100%, 100% 100%, 100% 100%;
+    background-repeat: no-repeat;
+    background-size: 12px 1px, 1px 12px, 12px 1px, 1px 12px, 12px 1px, 1px 12px, 12px 1px, 1px 12px;
+    border: 1px solid #00ffff1a;
+    min-width: 200px;
+    padding: 12px 16px;
+    position: absolute;
+    box-shadow: 0 0 20px #00ffff26;
+}
+
+.tt-header {
+    border-bottom: 1px solid #ffffff1a;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    display: flex;
+}
+
+.tt-icon {
+    filter: drop-shadow(0 0 5px var(--sim-accent-cyan));
+    color: var(--sim-accent-cyan);
+    font-size: 12px;
+    letter-spacing: 1px;
+}
+
+.tt-name {
+    font-family: var(--font-sim-header);
+    color: #fff;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    font-size: 13px;
+}
+
+.tt-category {
+    color: var(--sim-accent-cyan);
+    letter-spacing: 1.5px;
+    font-size: 9px;
+    font-weight: bold;
+}
+
+.tt-body {
+    flex-direction: column;
+    gap: 6px;
+    display: flex;
+}
+
+.tt-row {
+    font-family: var(--font-sim-mono);
+    justify-content: space-between;
+    font-size: 10px;
+    display: flex;
+}
+
+.tt-row span:first-child {
+    color: var(--sim-text-dim);
+    letter-spacing: .5px;
+}
+
+.tt-row span:last-child {
+    color: var(--sim-text-primary);
+    font-weight: 500;
+}
