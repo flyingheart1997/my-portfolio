@@ -1,13 +1,16 @@
 import gsap from 'gsap';
-import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { SolarSystemScene } from '../components/SolarSystemScene';
-
-gsap.registerPlugin(ScrollTrigger);
 
 export class NavigationManager {
     private readonly sceneManager: SolarSystemScene;
     private readonly onPlanetChange?: (index: number) => void;
-    private scrollTrigger: ScrollTrigger | null = null;
+    private readonly navigationState = { progress: 0 };
+    private navigationTween: gsap.core.Tween | null = null;
+    private targetProgress = 0;
+    private currentStep = -1;
+    private inputLockedUntil = 0;
+    private wheelIntent = 0;
+    private wheelResetId: number | null = null;
     private activePlanetIndex: number;
     private isDragging = false;
     private readonly pressedKeys = new Set<string>();
@@ -56,21 +59,44 @@ export class NavigationManager {
         if (clickedPlanetIndex === -1) return;
 
         const progress = this.sceneManager.getProgressForPlanetIndex(clickedPlanetIndex);
-        if (progress === null || !this.scrollTrigger) return;
+        if (progress === null) return;
 
-        const scrollStart = this.scrollTrigger.start;
-        const scrollEnd = this.scrollTrigger.end;
-        window.scrollTo({
-            top: scrollStart + (scrollEnd - scrollStart) * progress,
-            behavior: 'smooth'
-        });
+        const step = this.sceneManager.getFocusStepForPlanetIndex(clickedPlanetIndex);
+        if (step !== null) {
+            this.currentStep = step;
+        }
+        this.jumpNavigationProgress(progress);
     };
 
     private readonly handleWheel = (event: WheelEvent) => {
-        if (!event.altKey && !event.metaKey && !event.ctrlKey) return;
-
         event.preventDefault();
-        this.sceneManager.dolly(event.deltaY * 0.035);
+        const modeMultiplier = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? 16 : 1;
+        const rawDelta = event.deltaY * modeMultiplier;
+        const direction = Math.sign(rawDelta);
+        if (direction === 0) return;
+        if (performance.now() < this.inputLockedUntil) return;
+        if (this.navigationTween) return;
+
+        this.wheelIntent += rawDelta;
+
+        if (this.wheelResetId !== null) {
+            window.clearTimeout(this.wheelResetId);
+        }
+        this.wheelResetId = window.setTimeout(() => {
+            this.wheelIntent = 0;
+            this.wheelResetId = null;
+        }, 180);
+
+        const threshold = event.ctrlKey || event.metaKey ? 24 : 58;
+        if (Math.abs(this.wheelIntent) < threshold) return;
+
+        const stepDirection = Math.sign(this.wheelIntent);
+        this.wheelIntent = 0;
+        if (this.wheelResetId !== null) {
+            window.clearTimeout(this.wheelResetId);
+            this.wheelResetId = null;
+        }
+        this.navigateByStep(stepDirection);
     };
 
     private readonly handleKeyDown = (event: KeyboardEvent) => {
@@ -89,39 +115,63 @@ export class NavigationManager {
         this.sceneManager = sceneManager;
         this.onPlanetChange = onPlanetChange;
         this.activePlanetIndex = sceneManager.getActivePlanetIndex();
-        this.initScrollNavigation();
+        this.applyProgress(0);
         this.initInteractivity();
     }
 
-    private initScrollNavigation() {
-        const scroller = document.getElementById('solar-scroller');
+    private applyProgress(progress: number) {
+        const planetIndex = this.sceneManager.setScrollProgress(progress);
 
-        if (scroller) {
-            scroller.style.height = `${Math.max(window.innerHeight * 34, 30000)}px`;
+        if (planetIndex !== this.activePlanetIndex) {
+            this.activePlanetIndex = planetIndex;
+            this.onPlanetChange?.(planetIndex);
         }
+    }
 
-        this.scrollTrigger = ScrollTrigger.create({
-            trigger: '#solar-scroller',
-            start: 'top top',
-            end: 'bottom bottom',
-            scrub: 4.2,
-            invalidateOnRefresh: true,
-            onUpdate: self => {
-                const planetIndex = this.sceneManager.setScrollProgress(self.progress);
-
-                if (planetIndex !== this.activePlanetIndex) {
-                    this.activePlanetIndex = planetIndex;
-                    this.onPlanetChange?.(planetIndex);
-                }
+    private setNavigationProgress(progress: number, duration = 2.2) {
+        this.targetProgress = gsap.utils.clamp(0, 1, progress);
+        this.navigationTween?.kill();
+        this.navigationTween = gsap.to(this.navigationState, {
+            progress: this.targetProgress,
+            duration,
+            ease: 'power2.out',
+            overwrite: true,
+            onUpdate: () => this.applyProgress(this.navigationState.progress),
+            onComplete: () => {
+                this.navigationState.progress = this.targetProgress;
+                this.applyProgress(this.targetProgress);
+                this.navigationTween = null;
             }
         });
+    }
 
-        const initialPlanetIndex = this.sceneManager.setScrollProgress(this.scrollTrigger.progress);
-        if (initialPlanetIndex !== this.activePlanetIndex) {
-            this.activePlanetIndex = initialPlanetIndex;
-            this.onPlanetChange?.(initialPlanetIndex);
+    private navigateByStep(direction: number) {
+        const lastStep = this.sceneManager.getFocusStepCount() - 1;
+        let nextStep = this.currentStep;
+
+        if (direction > 0) {
+            nextStep = this.currentStep >= lastStep ? -1 : this.currentStep + 1;
+        } else {
+            nextStep = Math.max(-1, this.currentStep - 1);
         }
-        ScrollTrigger.refresh();
+
+        this.currentStep = nextStep;
+
+        if (nextStep === -1) {
+            this.inputLockedUntil = performance.now() + 1250;
+            this.jumpNavigationProgress(0);
+            return;
+        }
+
+        this.setNavigationProgress(this.sceneManager.getProgressForFocusStep(nextStep), 2.15);
+    }
+
+    private jumpNavigationProgress(progress: number) {
+        this.targetProgress = gsap.utils.clamp(0, 1, progress);
+        this.navigationTween?.kill();
+        this.navigationTween = null;
+        this.navigationState.progress = this.targetProgress;
+        this.applyProgress(this.targetProgress);
     }
 
     private startKeyboardLoop() {
@@ -177,7 +227,10 @@ export class NavigationManager {
             cancelAnimationFrame(this.keyFrameId);
         }
         this.pressedKeys.clear();
-        this.scrollTrigger?.kill();
-        this.scrollTrigger = null;
+        if (this.wheelResetId !== null) {
+            window.clearTimeout(this.wheelResetId);
+        }
+        this.navigationTween?.kill();
+        this.navigationTween = null;
     }
 }

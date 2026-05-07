@@ -44,9 +44,9 @@ export class SolarSystemScene {
     private dragLastY = 0;
     private dragDistance = 0;
     private orbitYaw = 0.52;
-    private orbitPitch = 0.22;
+    private orbitPitch = 0.62;
     private targetOrbitYaw = 0.52;
-    private targetOrbitPitch = 0.22;
+    private targetOrbitPitch = 0.62;
     private zoomDistanceOffset = 0;
     private targetZoomDistanceOffset = 0;
 
@@ -159,24 +159,6 @@ export class SolarSystemScene {
         this.backgroundObjects.push(stars);
         this.scene.add(stars);
 
-        const milkyWayTexture = this.createMilkyWayTexture();
-        const milkyWay = new THREE.Mesh(
-            new THREE.PlaneGeometry(2500, 720, 1, 1),
-            new THREE.MeshBasicMaterial({
-                map: milkyWayTexture,
-                transparent: true,
-                opacity: 0.92,
-                depthWrite: false,
-                fog: false,
-                blending: THREE.AdditiveBlending
-            })
-        );
-        milkyWay.position.set(120, 120, -1180);
-        milkyWay.rotation.z = -0.18;
-        milkyWay.userData.skipRaycast = true;
-        this.backgroundObjects.push(milkyWay);
-        this.scene.add(milkyWay);
-
         const galaxyCount = 1800;
         const galaxyGeo = new THREE.BufferGeometry();
         const galaxyPositions = new Float32Array(galaxyCount * 3);
@@ -251,48 +233,6 @@ export class SolarSystemScene {
         this.scene.add(dust);
     }
 
-    private createMilkyWayTexture() {
-        const canvas = document.createElement('canvas');
-        canvas.width = 1024;
-        canvas.height = 320;
-        const context = canvas.getContext('2d');
-
-        if (!context) {
-            return new THREE.CanvasTexture(canvas);
-        }
-
-        const centerY = canvas.height * 0.5;
-        const band = context.createLinearGradient(0, 0, 0, canvas.height);
-        band.addColorStop(0, 'rgba(0, 0, 0, 0)');
-        band.addColorStop(0.28, 'rgba(45, 75, 130, 0.08)');
-        band.addColorStop(0.43, 'rgba(135, 160, 210, 0.34)');
-        band.addColorStop(0.5, 'rgba(220, 228, 255, 0.48)');
-        band.addColorStop(0.57, 'rgba(100, 126, 184, 0.34)');
-        band.addColorStop(0.72, 'rgba(30, 52, 96, 0.08)');
-        band.addColorStop(1, 'rgba(0, 0, 0, 0)');
-        context.fillStyle = band;
-        context.fillRect(0, 0, canvas.width, canvas.height);
-
-        for (let index = 0; index < 1300; index += 1) {
-            const x = Math.random() * canvas.width;
-            const curve = Math.sin((x / canvas.width) * Math.PI * 2.4) * 26;
-            const y = centerY + curve + (Math.random() - 0.5) * Math.pow(Math.random(), 1.7) * 210;
-            const alpha = 0.08 + Math.random() * 0.36;
-            const radius = 0.35 + Math.random() * 1.35;
-            context.fillStyle = `rgba(210, 226, 255, ${alpha})`;
-            context.beginPath();
-            context.arc(x, y, radius, 0, Math.PI * 2);
-            context.fill();
-        }
-
-        const texture = new THREE.CanvasTexture(canvas);
-        texture.colorSpace = THREE.SRGBColorSpace;
-        texture.generateMipmaps = true;
-        texture.minFilter = THREE.LinearMipmapLinearFilter;
-        texture.magFilter = THREE.LinearFilter;
-        return texture;
-    }
-
     private initPlanets() {
         SOLAR_DATA.forEach(config => {
             const planet = new Planet(config, this.textureLoader, this.sharedGeometry);
@@ -307,11 +247,11 @@ export class SolarSystemScene {
     }
 
     private createAsteroidBelts() {
-        this.beltGroups.push(this.createBelt(74, 92, 1450, 0xc9bda2, 0.22, 0.52));
-        this.beltGroups.push(this.createBelt(282, 345, 900, 0x7f93b3, 0.18, 1.2));
+        this.beltGroups.push(this.createBelt(74, 92, 1150, 0xd6c7a6, 0.18, 0.42));
+        this.beltGroups.push(this.createBelt(282, 345, 620, 0x8191aa, 0.14, 0.95));
         this.beltGroups.forEach(belt => this.scene.add(belt));
-        this.rockBelts.push(this.createRockBelt(75, 91, 520, 0xb9aa8b, 0.13, 0.52));
-        this.rockBelts.push(this.createRockBelt(288, 342, 260, 0x7b879d, 0.26, 1.1));
+        this.rockBelts.push(this.createRockBelt(75, 91, 360, 0xb9aa8b, 0.1, 0.42));
+        this.rockBelts.push(this.createRockBelt(288, 342, 160, 0x7b879d, 0.2, 0.95));
         this.rockBelts.forEach(belt => this.scene.add(belt));
     }
 
@@ -349,7 +289,7 @@ export class SolarSystemScene {
             size,
             vertexColors: true,
             transparent: true,
-            opacity: 0.72,
+            opacity: 0.58,
             depthWrite: false
         });
 
@@ -424,18 +364,21 @@ export class SolarSystemScene {
             0,
             1
         );
-        const chapterCount = FOCUS_PLANET_INDICES.length - 1;
+        const chapterCount = FOCUS_PLANET_INDICES.length;
         const chapterPosition = clampedProgress * chapterCount;
         const chapterIndex = Math.min(Math.floor(chapterPosition), chapterCount - 1);
-        const phase = chapterIndex >= chapterCount
+        const phase = chapterPosition >= chapterCount
             ? 1
             : chapterPosition - chapterIndex;
         const fromStep = chapterIndex;
         const toStep = Math.min(fromStep + 1, FOCUS_PLANET_INDICES.length - 1);
-        const travelProgress = phase < CHAPTER_TRAVEL_START
+        const isLastStep = fromStep === FOCUS_PLANET_INDICES.length - 1;
+        const travelProgress = isLastStep || phase < CHAPTER_TRAVEL_START
             ? 0
             : this.smoothstep((phase - CHAPTER_TRAVEL_START) / (1 - CHAPTER_TRAVEL_START));
-        const zoomStrength = phase < CHAPTER_ZOOM_IN_END
+        const zoomStrength = isLastStep && phase >= CHAPTER_ZOOM_IN_END
+            ? 1
+            : phase < CHAPTER_ZOOM_IN_END
             ? this.smoothstep(phase / CHAPTER_ZOOM_IN_END)
             : phase < CHAPTER_HOLD_END
                 ? 1
@@ -467,8 +410,8 @@ export class SolarSystemScene {
             focus.localProgress
         );
         const isMobile = this.container.clientWidth < 768;
-        const arrivalDistance = THREE.MathUtils.clamp(radius * (isMobile ? 9.2 : 6.6), isMobile ? 16 : 14, isMobile ? 54 : 76);
-        const maxZoomDistance = THREE.MathUtils.clamp(radius * (isMobile ? 4.25 : 2.85), isMobile ? 7 : 5.2, isMobile ? 30 : 38);
+        const arrivalDistance = THREE.MathUtils.clamp(radius * (isMobile ? 12 : 10.5), isMobile ? 8 : 7, isMobile ? 74 : 96);
+        const maxZoomDistance = THREE.MathUtils.clamp(radius * (isMobile ? 6.4 : 5.4), isMobile ? 4.8 : 3.8, isMobile ? 46 : 58);
         const baseFocusDistance = THREE.MathUtils.lerp(arrivalDistance, maxZoomDistance, focus.zoomStrength);
         this.zoomDistanceOffset = THREE.MathUtils.lerp(this.zoomDistanceOffset, this.targetZoomDistanceOffset, immediate ? 1 : 0.13);
         const focusDistance = THREE.MathUtils.clamp(baseFocusDistance + this.zoomDistanceOffset, isMobile ? 6 : 4.8, isMobile ? 90 : 118);
@@ -486,8 +429,8 @@ export class SolarSystemScene {
         if (this.scrollProgress < INTRO_OVERVIEW_PROGRESS) {
             const introProgress = THREE.MathUtils.clamp(this.scrollProgress / INTRO_OVERVIEW_PROGRESS, 0, 1);
             const introEase = introProgress * introProgress * (3 - 2 * introProgress);
-            const overviewDistance = isMobile ? 1440 : 920;
-            const overviewPitch = isMobile ? 0.74 : 0.64;
+            const overviewDistance = isMobile ? 1080 : 690;
+            const overviewPitch = THREE.MathUtils.clamp(this.orbitPitch, -1.08, 1.08);
             const overviewHorizontalDistance = Math.cos(overviewPitch) * overviewDistance;
 
             this.overviewCameraPosition.set(
@@ -516,6 +459,7 @@ export class SolarSystemScene {
         const introFocusVisibility = this.scrollProgress < INTRO_OVERVIEW_PROGRESS
             ? THREE.MathUtils.clamp(this.scrollProgress / INTRO_OVERVIEW_PROGRESS, 0, 1)
             : 1;
+        const overviewVisibility = 1 - introFocusVisibility;
 
         this.planets.forEach((planet, planetIndex) => {
             const sequenceIndex = FOCUS_PLANET_INDICES.indexOf(planetIndex);
@@ -523,6 +467,7 @@ export class SolarSystemScene {
                 ? 0
                 : Math.max(0, 1 - Math.abs(sequenceIndex - focus.sequencePosition)) * introFocusVisibility;
             planet.setFocusStrength(strength);
+            planet.setOverviewStrength(overviewVisibility);
         });
     }
 
@@ -607,7 +552,7 @@ export class SolarSystemScene {
 
         this.targetOrbitYaw -= deltaX * 0.0028;
         this.targetOrbitPitch = THREE.MathUtils.clamp(
-            this.targetOrbitPitch - deltaY * 0.0032,
+            this.targetOrbitPitch + deltaY * 0.0046,
             -1.2,
             1.2
         );
@@ -632,7 +577,7 @@ export class SolarSystemScene {
 
     public resetView() {
         this.targetOrbitYaw = 0.52;
-        this.targetOrbitPitch = 0.22;
+        this.targetOrbitPitch = 0.62;
         this.targetZoomDistanceOffset = 0;
     }
 
@@ -647,8 +592,22 @@ export class SolarSystemScene {
     public getProgressForPlanetIndex(index: number) {
         const sequenceIndex = FOCUS_PLANET_INDICES.indexOf(index);
         if (sequenceIndex === -1) return null;
-        const focusProgress = sequenceIndex / Math.max(FOCUS_PLANET_INDICES.length - 1, 1);
+        return this.getProgressForFocusStep(sequenceIndex);
+    }
+
+    public getProgressForFocusStep(step: number) {
+        const clampedStep = THREE.MathUtils.clamp(step, 0, FOCUS_PLANET_INDICES.length - 1);
+        const focusProgress = (clampedStep + CHAPTER_HOLD_END) / FOCUS_PLANET_INDICES.length;
         return INTRO_OVERVIEW_PROGRESS + focusProgress * (1 - INTRO_OVERVIEW_PROGRESS);
+    }
+
+    public getFocusStepForPlanetIndex(index: number) {
+        const sequenceIndex = FOCUS_PLANET_INDICES.indexOf(index);
+        return sequenceIndex === -1 ? null : sequenceIndex;
+    }
+
+    public getFocusStepCount() {
+        return FOCUS_PLANET_INDICES.length;
     }
 
     public start() {

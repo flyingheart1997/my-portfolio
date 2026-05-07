@@ -18,19 +18,22 @@ export class Planet {
     private readonly disposableTextures: THREE.Texture[] = [];
     private orbitLine: THREE.LineLoop | null = null;
     private sunMaterial: THREE.ShaderMaterial | null = null;
+    private ringMaterial: THREE.MeshBasicMaterial | null = null;
     private cloudLayer: THREE.Mesh | null = null;
     private readonly manualRotation = new THREE.Quaternion();
     private currentScale = 1;
     private targetFocus = 0;
     private targetHover = 0;
+    private targetOverview = 0;
+    private orbitAngle: number;
 
     constructor(config: PlanetConfig, textureLoader: THREE.TextureLoader, sharedGeometry: THREE.SphereGeometry) {
         this.config = config;
         this.orbitGroup = new THREE.Group();
         this.planetGroup = new THREE.Group();
+        this.orbitAngle = config.orbitalPhase;
 
-        this.orbitGroup.rotation.y = config.orbitalPhase;
-        this.planetGroup.position.x = config.distance;
+        this.updateOrbitPosition();
 
         const material = this.createSurfaceMaterial(textureLoader);
         this.mesh = new THREE.Mesh(sharedGeometry, material);
@@ -184,20 +187,31 @@ export class Planet {
             transparent: true,
             opacity: this.config.ring.opacity,
             side: THREE.DoubleSide,
-            depthWrite: false
+            depthWrite: false,
+            depthTest: true,
+            blending: THREE.NormalBlending
         };
 
-        if (this.config.ringTextureUrl) {
+        if (this.config.name === 'Saturn' || this.config.name === 'Uranus') {
+            const ringTexture = this.createPlanetRingTexture(this.config.name);
+            materialOptions.map = ringTexture;
+            materialOptions.color = 0xffffff;
+            materialOptions.opacity = this.config.name === 'Saturn' ? 0.94 : 0.86;
+            this.disposableTextures.push(ringTexture);
+        } else if (this.config.ringTextureUrl) {
             const ringTexture = this.loadTexture(textureLoader, this.config.ringTextureUrl);
             materialOptions.map = ringTexture;
             materialOptions.alphaMap = ringTexture;
             materialOptions.color = 0xffffff;
+            materialOptions.opacity = Math.min(this.config.ring.opacity, 0.72);
         }
 
         const material = new THREE.MeshBasicMaterial(materialOptions);
+        this.ringMaterial = material;
         const rings = new THREE.Mesh(geometry, material);
         rings.rotation.x = this.config.ring.tilt;
         rings.rotation.z = this.config.axialTilt * 0.35;
+        rings.renderOrder = 2;
         rings.userData.skipRaycast = true;
 
         this.disposableGeometries.push(geometry);
@@ -205,23 +219,123 @@ export class Planet {
         this.planetGroup.add(rings);
     }
 
+    private createPlanetRingTexture(planetName: string) {
+        const canvas = document.createElement('canvas');
+        canvas.width = 1024;
+        canvas.height = 16;
+        const context = canvas.getContext('2d');
+
+        if (!context) {
+            return new THREE.CanvasTexture(canvas);
+        }
+
+        const bands = planetName === 'Saturn'
+            ? [
+                { stop: 0.00, color: 'rgba(0, 0, 0, 0)' },
+                { stop: 0.08, color: 'rgba(205, 186, 135, 0.18)' },
+                { stop: 0.17, color: 'rgba(236, 220, 174, 0.64)' },
+                { stop: 0.27, color: 'rgba(129, 107, 73, 0.2)' },
+                { stop: 0.36, color: 'rgba(248, 235, 190, 0.78)' },
+                { stop: 0.48, color: 'rgba(60, 48, 34, 0.08)' },
+                { stop: 0.54, color: 'rgba(0, 0, 0, 0)' },
+                { stop: 0.62, color: 'rgba(230, 211, 161, 0.72)' },
+                { stop: 0.73, color: 'rgba(176, 151, 102, 0.34)' },
+                { stop: 0.86, color: 'rgba(244, 229, 184, 0.52)' },
+                { stop: 1.00, color: 'rgba(0, 0, 0, 0)' }
+            ]
+            : [
+                { stop: 0.00, color: 'rgba(0, 0, 0, 0)' },
+                { stop: 0.08, color: 'rgba(116, 154, 168, 0.06)' },
+                { stop: 0.16, color: 'rgba(178, 224, 233, 0.18)' },
+                { stop: 0.24, color: 'rgba(235, 255, 255, 0.34)' },
+                { stop: 0.32, color: 'rgba(122, 166, 180, 0.14)' },
+                { stop: 0.40, color: 'rgba(0, 0, 0, 0.01)' },
+                { stop: 0.48, color: 'rgba(164, 214, 224, 0.24)' },
+                { stop: 0.56, color: 'rgba(238, 255, 255, 0.46)' },
+                { stop: 0.64, color: 'rgba(106, 144, 158, 0.12)' },
+                { stop: 0.72, color: 'rgba(160, 208, 220, 0.24)' },
+                { stop: 0.82, color: 'rgba(230, 252, 255, 0.38)' },
+                { stop: 0.92, color: 'rgba(95, 130, 145, 0.08)' },
+                { stop: 1.00, color: 'rgba(0, 0, 0, 0)' }
+            ];
+        const gradient = context.createLinearGradient(0, 0, canvas.width, 0);
+        bands.forEach(band => gradient.addColorStop(band.stop, band.color));
+        context.fillStyle = gradient;
+        context.fillRect(0, 0, canvas.width, canvas.height);
+
+        if (planetName === 'Saturn') {
+            context.fillStyle = 'rgba(245, 232, 190, 0.42)';
+            [0.22, 0.405, 0.665, 0.81].forEach(stop => {
+                const x = stop * canvas.width;
+                context.fillRect(x, 0, 1.2, canvas.height);
+            });
+        } else {
+            context.fillStyle = 'rgba(235, 255, 255, 0.34)';
+            [0.18, 0.31, 0.43, 0.56, 0.69, 0.82].forEach(stop => {
+                const x = stop * canvas.width;
+                context.fillRect(x, 0, 1, canvas.height);
+            });
+        }
+
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.colorSpace = THREE.SRGBColorSpace;
+        texture.generateMipmaps = true;
+        texture.minFilter = THREE.LinearMipmapLinearFilter;
+        texture.magFilter = THREE.LinearFilter;
+        texture.wrapS = THREE.ClampToEdgeWrapping;
+        texture.wrapT = THREE.ClampToEdgeWrapping;
+        return texture;
+    }
+
     private addSunLight() {
         const light = new THREE.PointLight(0xfff0c7, 420, 900, 1.45);
         this.planetGroup.add(light);
 
-        const glowGeo = new THREE.SphereGeometry(this.config.radius * 1.18, 48, 32);
-        const glowMat = new THREE.MeshBasicMaterial({
-            color: 0xff9d1f,
+        const coronaTexture = this.createSunCoronaTexture();
+        const coronaMat = new THREE.SpriteMaterial({
+            map: coronaTexture,
             transparent: true,
-            opacity: 0.24,
+            opacity: 1,
             depthWrite: false,
-            blending: THREE.AdditiveBlending
+            depthTest: false,
+            blending: THREE.AdditiveBlending,
+            toneMapped: false
         });
-        const glow = new THREE.Mesh(glowGeo, glowMat);
-        glow.userData.skipRaycast = true;
-        this.disposableGeometries.push(glowGeo);
-        this.materials.push(glowMat);
-        this.planetGroup.add(glow);
+        const corona = new THREE.Sprite(coronaMat);
+        corona.scale.setScalar(this.config.radius * 3.35);
+        corona.renderOrder = -1;
+        corona.userData.skipRaycast = true;
+        this.disposableTextures.push(coronaTexture);
+        this.materials.push(coronaMat);
+        this.planetGroup.add(corona);
+    }
+
+    private createSunCoronaTexture() {
+        const canvas = document.createElement('canvas');
+        canvas.width = 512;
+        canvas.height = 512;
+        const context = canvas.getContext('2d');
+
+        if (!context) {
+            return new THREE.CanvasTexture(canvas);
+        }
+
+        const center = canvas.width / 2;
+        const gradient = context.createRadialGradient(center, center, canvas.width * 0.26, center, center, canvas.width * 0.5);
+        gradient.addColorStop(0, 'rgba(255, 138, 20, 0.58)');
+        gradient.addColorStop(0.24, 'rgba(255, 116, 18, 0.34)');
+        gradient.addColorStop(0.52, 'rgba(255, 92, 14, 0.14)');
+        gradient.addColorStop(0.82, 'rgba(255, 70, 10, 0.045)');
+        gradient.addColorStop(1, 'rgba(255, 70, 10, 0)');
+        context.fillStyle = gradient;
+        context.fillRect(0, 0, canvas.width, canvas.height);
+
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.colorSpace = THREE.SRGBColorSpace;
+        texture.generateMipmaps = true;
+        texture.minFilter = THREE.LinearMipmapLinearFilter;
+        texture.magFilter = THREE.LinearFilter;
+        return texture;
     }
 
     private createOrbitRing() {
@@ -230,22 +344,20 @@ export class Planet {
 
         for (let index = 0; index < segments; index += 1) {
             const angle = (index / segments) * Math.PI * 2;
-            points.push(new THREE.Vector3(
-                Math.cos(angle) * this.config.distance,
-                0,
-                Math.sin(angle) * this.config.distance
-            ));
+            points.push(this.getOrbitPosition(angle));
         }
 
         const geometry = new THREE.BufferGeometry().setFromPoints(points);
         const material = new THREE.LineBasicMaterial({
-            color: 0x8aa4c8,
+            color: 0xb5cfff,
             transparent: true,
-            opacity: 0.14,
-            depthWrite: false
+            opacity: 0.34,
+            depthWrite: false,
+            depthTest: true
         });
 
         this.orbitLine = new THREE.LineLoop(geometry, material);
+        this.orbitLine.renderOrder = 1;
         this.orbitLine.userData.skipRaycast = true;
         this.disposableGeometries.push(geometry);
         this.materials.push(material);
@@ -255,16 +367,50 @@ export class Planet {
         this.targetFocus = THREE.MathUtils.clamp(strength, 0, 1);
     }
 
+    public setOverviewStrength(strength: number) {
+        this.targetOverview = THREE.MathUtils.clamp(strength, 0, 1);
+    }
+
     public setHover(active: boolean) {
         this.targetHover = active ? 1 : 0;
+    }
+
+    private getOverviewScaleBoost() {
+        if (this.config.name === 'Sun') return 0;
+        return THREE.MathUtils.clamp(2.2 / this.config.radius, 0.38, 2.7);
     }
 
     public setOrbitHighlight(highlight: boolean) {
         if (!this.orbitLine) return;
 
         const material = this.orbitLine.material as THREE.LineBasicMaterial;
-        material.opacity = highlight ? 0.44 : 0.14 + this.targetFocus * 0.28;
+        const baseOpacity = 0.34;
+        material.opacity = highlight ? 0.54 : baseOpacity + this.targetFocus * 0.08;
         material.color.setHex(highlight || this.targetFocus > 0.2 ? 0xdbe9ff : 0x8aa4c8);
+    }
+
+    private getOrbitPosition(angle: number) {
+        if (this.config.distance <= 0) {
+            return new THREE.Vector3(0, 0, 0);
+        }
+
+        const eccentricity = this.config.orbitEccentricity ?? 0;
+        const semiMajorAxis = this.config.distance;
+        const semiMinorAxis = semiMajorAxis * Math.sqrt(1 - eccentricity * eccentricity);
+        const focusOffset = semiMajorAxis * eccentricity;
+        const position = new THREE.Vector3(
+            Math.cos(angle) * semiMajorAxis - focusOffset,
+            0,
+            Math.sin(angle) * semiMinorAxis
+        );
+
+        position.applyAxisAngle(new THREE.Vector3(0, 1, 0), this.config.orbitLongitude ?? 0);
+        position.applyAxisAngle(new THREE.Vector3(1, 0, 0), this.config.orbitInclination ?? 0);
+        return position;
+    }
+
+    private updateOrbitPosition() {
+        this.planetGroup.position.copy(this.getOrbitPosition(this.orbitAngle));
     }
 
     public update(time: number, delta: number) {
@@ -281,13 +427,27 @@ export class Planet {
         }
 
         if (this.config.orbitSpeed > 0) {
-            this.orbitGroup.rotation.y += this.config.orbitSpeed * delta;
+            this.orbitAngle += this.config.orbitSpeed * delta;
+            this.updateOrbitPosition();
         }
 
-        const targetScale = 1 + this.targetFocus * 0.075 + this.targetHover * 0.07;
+        const targetScale = 1
+            + this.targetOverview * this.getOverviewScaleBoost()
+            + this.targetFocus * 0.025
+            + this.targetHover * 0.035;
         this.currentScale = THREE.MathUtils.lerp(this.currentScale, targetScale, 1 - Math.pow(0.001, delta));
         this.planetGroup.scale.setScalar(this.currentScale);
         this.setOrbitHighlight(this.targetHover > 0.1);
+
+        if (this.ringMaterial) {
+            const ringVisibility = THREE.MathUtils.clamp(
+                this.targetFocus * 0.94 + this.targetOverview * 0.62 + this.targetHover * 0.24,
+                0,
+                1
+            );
+            const maxOpacity = this.config.name === 'Saturn' ? 0.96 : 0.88;
+            this.ringMaterial.opacity = ringVisibility * maxOpacity;
+        }
     }
 
     public getOrbitLine() {
