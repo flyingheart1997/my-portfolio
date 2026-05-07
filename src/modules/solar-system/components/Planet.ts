@@ -196,7 +196,7 @@ export class Planet {
             const ringTexture = this.createPlanetRingTexture(this.config.name);
             materialOptions.map = ringTexture;
             materialOptions.color = 0xffffff;
-            materialOptions.opacity = this.config.name === 'Saturn' ? 0.94 : 0.86;
+            materialOptions.opacity = this.config.name === 'Saturn' ? 0.64 : 0.62;
             this.disposableTextures.push(ringTexture);
         } else if (this.config.ringTextureUrl) {
             const ringTexture = this.loadTexture(textureLoader, this.config.ringTextureUrl);
@@ -232,30 +232,30 @@ export class Planet {
         const bands = planetName === 'Saturn'
             ? [
                 { stop: 0.00, color: 'rgba(0, 0, 0, 0)' },
-                { stop: 0.08, color: 'rgba(205, 186, 135, 0.18)' },
-                { stop: 0.17, color: 'rgba(236, 220, 174, 0.64)' },
-                { stop: 0.27, color: 'rgba(129, 107, 73, 0.2)' },
-                { stop: 0.36, color: 'rgba(248, 235, 190, 0.78)' },
-                { stop: 0.48, color: 'rgba(60, 48, 34, 0.08)' },
+                { stop: 0.08, color: 'rgba(205, 186, 135, 0.1)' },
+                { stop: 0.17, color: 'rgba(236, 220, 174, 0.34)' },
+                { stop: 0.27, color: 'rgba(129, 107, 73, 0.12)' },
+                { stop: 0.36, color: 'rgba(248, 235, 190, 0.42)' },
+                { stop: 0.48, color: 'rgba(60, 48, 34, 0.05)' },
                 { stop: 0.54, color: 'rgba(0, 0, 0, 0)' },
-                { stop: 0.62, color: 'rgba(230, 211, 161, 0.72)' },
-                { stop: 0.73, color: 'rgba(176, 151, 102, 0.34)' },
-                { stop: 0.86, color: 'rgba(244, 229, 184, 0.52)' },
+                { stop: 0.62, color: 'rgba(230, 211, 161, 0.38)' },
+                { stop: 0.73, color: 'rgba(176, 151, 102, 0.18)' },
+                { stop: 0.86, color: 'rgba(244, 229, 184, 0.28)' },
                 { stop: 1.00, color: 'rgba(0, 0, 0, 0)' }
             ]
             : [
                 { stop: 0.00, color: 'rgba(0, 0, 0, 0)' },
-                { stop: 0.08, color: 'rgba(116, 154, 168, 0.06)' },
-                { stop: 0.16, color: 'rgba(178, 224, 233, 0.18)' },
-                { stop: 0.24, color: 'rgba(235, 255, 255, 0.34)' },
-                { stop: 0.32, color: 'rgba(122, 166, 180, 0.14)' },
+                { stop: 0.08, color: 'rgba(116, 154, 168, 0.035)' },
+                { stop: 0.16, color: 'rgba(178, 224, 233, 0.1)' },
+                { stop: 0.24, color: 'rgba(235, 255, 255, 0.18)' },
+                { stop: 0.32, color: 'rgba(122, 166, 180, 0.08)' },
                 { stop: 0.40, color: 'rgba(0, 0, 0, 0.01)' },
-                { stop: 0.48, color: 'rgba(164, 214, 224, 0.24)' },
-                { stop: 0.56, color: 'rgba(238, 255, 255, 0.46)' },
-                { stop: 0.64, color: 'rgba(106, 144, 158, 0.12)' },
-                { stop: 0.72, color: 'rgba(160, 208, 220, 0.24)' },
-                { stop: 0.82, color: 'rgba(230, 252, 255, 0.38)' },
-                { stop: 0.92, color: 'rgba(95, 130, 145, 0.08)' },
+                { stop: 0.48, color: 'rgba(164, 214, 224, 0.13)' },
+                { stop: 0.56, color: 'rgba(238, 255, 255, 0.24)' },
+                { stop: 0.64, color: 'rgba(106, 144, 158, 0.065)' },
+                { stop: 0.72, color: 'rgba(160, 208, 220, 0.13)' },
+                { stop: 0.82, color: 'rgba(230, 252, 255, 0.2)' },
+                { stop: 0.92, color: 'rgba(95, 130, 145, 0.045)' },
                 { stop: 1.00, color: 'rgba(0, 0, 0, 0)' }
             ];
         const gradient = context.createLinearGradient(0, 0, canvas.width, 0);
@@ -264,13 +264,13 @@ export class Planet {
         context.fillRect(0, 0, canvas.width, canvas.height);
 
         if (planetName === 'Saturn') {
-            context.fillStyle = 'rgba(245, 232, 190, 0.42)';
+            context.fillStyle = 'rgba(245, 232, 190, 0.18)';
             [0.22, 0.405, 0.665, 0.81].forEach(stop => {
                 const x = stop * canvas.width;
                 context.fillRect(x, 0, 1.2, canvas.height);
             });
         } else {
-            context.fillStyle = 'rgba(235, 255, 255, 0.34)';
+            context.fillStyle = 'rgba(235, 255, 255, 0.12)';
             [0.18, 0.31, 0.43, 0.56, 0.69, 0.82].forEach(stop => {
                 const x = stop * canvas.width;
                 context.fillRect(x, 0, 1, canvas.height);
@@ -302,7 +302,7 @@ export class Planet {
             toneMapped: false
         });
         const corona = new THREE.Sprite(coronaMat);
-        corona.scale.setScalar(this.config.radius * 3.35);
+        corona.scale.setScalar(this.config.radius * 5.2);
         corona.renderOrder = -1;
         corona.userData.skipRaycast = true;
         this.disposableTextures.push(coronaTexture);
@@ -321,14 +321,38 @@ export class Planet {
         }
 
         const center = canvas.width / 2;
-        const gradient = context.createRadialGradient(center, center, canvas.width * 0.26, center, center, canvas.width * 0.5);
-        gradient.addColorStop(0, 'rgba(255, 138, 20, 0.58)');
-        gradient.addColorStop(0.24, 'rgba(255, 116, 18, 0.34)');
-        gradient.addColorStop(0.52, 'rgba(255, 92, 14, 0.14)');
-        gradient.addColorStop(0.82, 'rgba(255, 70, 10, 0.045)');
-        gradient.addColorStop(1, 'rgba(255, 70, 10, 0)');
+        const edge = canvas.width * 0.5;
+        const gradient = context.createRadialGradient(center, center, edge * 0.3, center, center, edge);
+        gradient.addColorStop(0, 'rgba(255, 208, 82, 0.02)');
+        gradient.addColorStop(0.28, 'rgba(255, 178, 40, 0.07)');
+        gradient.addColorStop(0.38, 'rgba(255, 146, 24, 0.38)');
+        gradient.addColorStop(0.46, 'rgba(255, 119, 18, 0.56)');
+        gradient.addColorStop(0.58, 'rgba(255, 95, 13, 0.28)');
+        gradient.addColorStop(0.74, 'rgba(255, 74, 8, 0.12)');
+        gradient.addColorStop(0.9, 'rgba(255, 66, 4, 0.04)');
+        gradient.addColorStop(1, 'rgba(255, 66, 4, 0)');
         context.fillStyle = gradient;
         context.fillRect(0, 0, canvas.width, canvas.height);
+
+        context.globalCompositeOperation = 'lighter';
+        context.lineCap = 'round';
+        [
+            { radius: 0.39, width: 24, color: 'rgba(255, 186, 54, 0.28)' },
+            { radius: 0.46, width: 32, color: 'rgba(255, 126, 18, 0.2)' },
+            { radius: 0.58, width: 42, color: 'rgba(255, 93, 10, 0.11)' },
+            { radius: 0.74, width: 54, color: 'rgba(255, 72, 6, 0.045)' }
+        ].forEach(band => {
+            context.save();
+            context.shadowBlur = band.width * 0.8;
+            context.shadowColor = band.color;
+            context.strokeStyle = band.color;
+            context.lineWidth = band.width;
+            context.beginPath();
+            context.arc(center, center, edge * band.radius, 0, Math.PI * 2);
+            context.stroke();
+            context.restore();
+        });
+        context.globalCompositeOperation = 'source-over';
 
         const texture = new THREE.CanvasTexture(canvas);
         texture.colorSpace = THREE.SRGBColorSpace;
@@ -441,11 +465,11 @@ export class Planet {
 
         if (this.ringMaterial) {
             const ringVisibility = THREE.MathUtils.clamp(
-                this.targetFocus * 0.94 + this.targetOverview * 0.62 + this.targetHover * 0.24,
+                this.targetFocus * 0.72 + this.targetOverview * 0.42 + this.targetHover * 0.14,
                 0,
                 1
             );
-            const maxOpacity = this.config.name === 'Saturn' ? 0.96 : 0.88;
+            const maxOpacity = this.config.name === 'Saturn' ? 0.68 : 0.66;
             this.ringMaterial.opacity = ringVisibility * maxOpacity;
         }
     }
