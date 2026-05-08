@@ -29,6 +29,13 @@ export class SolarSystemScene {
     private readonly beltGroups: THREE.Points[] = [];
     private readonly rockBelts: THREE.InstancedMesh[] = [];
     private readonly handleResize = () => this.onResize();
+    private readonly onHoverChange?: (index: number | null) => void;
+    private readonly screenProjection = new THREE.Vector3();
+    private readonly screenWorldPosition = new THREE.Vector3();
+    private readonly screenRadiusPosition = new THREE.Vector3();
+    private readonly screenCameraRight = new THREE.Vector3();
+    private readonly screenPlanetScale = new THREE.Vector3();
+    private readonly orbitProjection = new THREE.Vector3();
 
     private isPointerActive = false;
     private isRunning = false;
@@ -55,8 +62,9 @@ export class SolarSystemScene {
         return clamped * clamped * (3 - 2 * clamped);
     }
 
-    constructor(container: HTMLElement) {
+    constructor(container: HTMLElement, onHoverChange?: (index: number | null) => void) {
         this.container = container;
+        this.onHoverChange = onHoverChange;
         this.scene = new THREE.Scene();
         this.scene.background = new THREE.Color(0x01040d);
         this.scene.fog = new THREE.FogExp2(0x020713, 0.00088);
@@ -479,9 +487,14 @@ export class SolarSystemScene {
             return;
         }
 
+        if (this.isOverviewHoverMode()) {
+            this.setHoveredPlanet(null);
+            return;
+        }
+
         this.raycaster.setFromCamera(this.pointer, this.camera);
         const intersections = this.raycaster.intersectObjects(
-            this.planets.map(planet => planet.mesh),
+            this.planets.map(planet => planet.hitMesh),
             false
         );
 
@@ -492,6 +505,50 @@ export class SolarSystemScene {
         this.setHoveredPlanet(hitPlanet);
     }
 
+    private isOverviewHoverMode() {
+        return this.scrollProgress < INTRO_OVERVIEW_PROGRESS * 0.62;
+    }
+
+    private isPointerInsideOuterOrbitArea() {
+        const outerOrbit = this.planets[this.planets.length - 1]?.getOrbitLine();
+        const position = outerOrbit?.geometry.getAttribute('position') as THREE.BufferAttribute | undefined;
+        if (!position) return false;
+
+        const width = this.container.clientWidth;
+        const height = this.container.clientHeight;
+        const pointerX = (this.pointer.x * 0.5 + 0.5) * width;
+        const pointerY = (-this.pointer.y * 0.5 + 0.5) * height;
+        let minX = Number.POSITIVE_INFINITY;
+        let minY = Number.POSITIVE_INFINITY;
+        let maxX = Number.NEGATIVE_INFINITY;
+        let maxY = Number.NEGATIVE_INFINITY;
+        let visiblePoints = 0;
+
+        for (let index = 0; index < position.count; index += 12) {
+            this.orbitProjection.fromBufferAttribute(position, index).project(this.camera);
+            if (this.orbitProjection.z < -1 || this.orbitProjection.z > 1) continue;
+
+            const x = (this.orbitProjection.x * 0.5 + 0.5) * width;
+            const y = (-this.orbitProjection.y * 0.5 + 0.5) * height;
+            minX = Math.min(minX, x);
+            minY = Math.min(minY, y);
+            maxX = Math.max(maxX, x);
+            maxY = Math.max(maxY, y);
+            visiblePoints += 1;
+        }
+
+        if (visiblePoints < 12) return false;
+
+        const centerX = (minX + maxX) / 2;
+        const centerY = (minY + maxY) / 2;
+        const radiusX = Math.max((maxX - minX) / 2, 1);
+        const radiusY = Math.max((maxY - minY) / 2, 1);
+        const normalizedDistance = ((pointerX - centerX) ** 2) / (radiusX ** 2)
+            + ((pointerY - centerY) ** 2) / (radiusY ** 2);
+
+        return normalizedDistance <= 1.08;
+    }
+
     private setHoveredPlanet(planet: Planet | null) {
         if (planet === this.hoveredPlanet) return;
 
@@ -500,6 +557,7 @@ export class SolarSystemScene {
         }
 
         this.hoveredPlanet = planet;
+        this.onHoverChange?.(planet ? this.planets.indexOf(planet) : null);
         this.renderer.domElement.style.cursor = planet ? 'pointer' : 'default';
 
         if (planet) {
@@ -510,7 +568,7 @@ export class SolarSystemScene {
     private pickPlanet(x = this.pointer.x, y = this.pointer.y) {
         this.raycaster.setFromCamera(new THREE.Vector2(x, y), this.camera);
         const intersections = this.raycaster.intersectObjects(
-            this.planets.map(planet => planet.mesh),
+            this.planets.map(planet => planet.hitMesh),
             false
         );
 
@@ -666,6 +724,37 @@ export class SolarSystemScene {
 
     public getActivePlanetIndex() {
         return this.activePlanetIndex;
+    }
+
+    public getPlanetScreenPosition(index: number) {
+        const planet = this.planets[index];
+        if (!planet) return null;
+
+        planet.planetGroup.getWorldPosition(this.screenWorldPosition);
+        this.screenProjection.copy(this.screenWorldPosition).project(this.camera);
+
+        const width = this.container.clientWidth;
+        const height = this.container.clientHeight;
+        const x = (this.screenProjection.x * 0.5 + 0.5) * width;
+        const y = (-this.screenProjection.y * 0.5 + 0.5) * height;
+        planet.planetGroup.getWorldScale(this.screenPlanetScale);
+        this.screenCameraRight.setFromMatrixColumn(this.camera.matrixWorld, 0).normalize();
+        this.screenRadiusPosition
+            .copy(this.screenWorldPosition)
+            .addScaledVector(
+                this.screenCameraRight,
+                planet.config.radius * Math.max(this.screenPlanetScale.x, this.screenPlanetScale.y, this.screenPlanetScale.z)
+            )
+            .project(this.camera);
+        const radiusX = (this.screenRadiusPosition.x * 0.5 + 0.5) * width;
+        const radiusY = (-this.screenRadiusPosition.y * 0.5 + 0.5) * height;
+
+        return {
+            x,
+            y,
+            visible: this.screenProjection.z >= -1 && this.screenProjection.z <= 1,
+            radius: Math.hypot(radiusX - x, radiusY - y)
+        };
     }
 
     public getCamera() {

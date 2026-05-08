@@ -9,6 +9,7 @@ import {
 
 export class Planet {
     public readonly mesh: THREE.Mesh;
+    public readonly hitMesh: THREE.Mesh;
     public readonly orbitGroup: THREE.Group;
     public readonly planetGroup: THREE.Group;
     public readonly config: PlanetConfig;
@@ -42,6 +43,21 @@ export class Planet {
         this.mesh.rotation.y = config.orbitalPhase * 0.82;
         this.mesh.userData.planet = this;
         this.planetGroup.add(this.mesh);
+
+        const hitMaterial = new THREE.MeshBasicMaterial({
+            color: 0xffffff,
+            transparent: true,
+            opacity: 0,
+            depthWrite: false,
+            side: THREE.DoubleSide
+        });
+        const hitRadius = config.radius * 1.08;
+        this.hitMesh = new THREE.Mesh(sharedGeometry, hitMaterial);
+        this.hitMesh.scale.setScalar(hitRadius);
+        this.hitMesh.userData.planet = this;
+        this.materials.push(hitMaterial);
+        this.planetGroup.add(this.hitMesh);
+
         this.orbitGroup.add(this.planetGroup);
 
         if (config.distance > 0) {
