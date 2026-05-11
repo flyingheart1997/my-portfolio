@@ -33,6 +33,17 @@ const getSurfaceStyle = (index: number) => {
     } as StyleWithVars;
 };
 
+const getActionLabel = (category: string) => {
+    const normalizedCategory = category.toLowerCase();
+    if (normalizedCategory.includes('email')) return 'Send email';
+    if (normalizedCategory.includes('linkedin')) return 'Open LinkedIn';
+    if (normalizedCategory.includes('github')) return 'Open GitHub';
+    if (normalizedCategory.includes('website')) return 'Open website';
+    return 'Open signal';
+};
+
+const isExternalHref = (href: string) => /^https?:\/\//.test(href);
+
 const CoreBrief = ({
     chapter,
     chapterIndex,
@@ -87,24 +98,71 @@ const CoreBrief = ({
                                 ))}
                             </ul>
                             <div className="resumeMiniTags" aria-label={`${callout.title} signals`}>
-                                {callout.tags.slice(0, 3).map(tag => (
-                                    <small key={tag}>{tag}</small>
+                                {callout.tags.slice(0, 3).map((tag, tagIndex) => (
+                                    <small
+                                        key={tag}
+                                        style={{
+                                            '--pill-delay': `${1210 + index * 120 + tagIndex * 82}ms`
+                                        } as StyleWithVars}
+                                    >
+                                        {tag}
+                                    </small>
                                 ))}
                             </div>
+                            {callout.href ? (
+                                <a
+                                    className="resumeLink"
+                                    href={callout.href}
+                                    target={isExternalHref(callout.href) ? '_blank' : undefined}
+                                    rel={isExternalHref(callout.href) ? 'noreferrer' : undefined}
+                                >
+                                    {getActionLabel(callout.category)}
+                                </a>
+                            ) : null}
                         </article>
                     ))}
 
-                    <article
-                        className="resumeCell"
-                        style={{ '--module-delay': '1180ms' } as StyleWithVars}
-                    >
-                        <span className="resumeLabel">Tech Stack</span>
-                        <div className="resumeStack" aria-label={`${chapter.title} technologies`}>
-                            {chapter.tags.map(tag => (
-                                <small key={tag}>{tag}</small>
-                            ))}
-                        </div>
-                    </article>
+                    {chapter.actionPanel ? (
+                        <article
+                            className="resumeCell resumeActionCell"
+                            style={{ '--module-delay': '1180ms' } as StyleWithVars}
+                        >
+                            <span className="resumeLabel">{chapter.actionPanel.category}</span>
+                            <h3>{chapter.actionPanel.title}</h3>
+                            <p>{chapter.actionPanel.subtitle}</p>
+                            <ul>
+                                {chapter.actionPanel.highlights.map(highlight => (
+                                    <li key={highlight}>{highlight}</li>
+                                ))}
+                            </ul>
+                            <a
+                                className="resumeDownload"
+                                href={chapter.actionPanel.href}
+                                download={chapter.actionPanel.download}
+                            >
+                                {chapter.actionPanel.cta}
+                            </a>
+                        </article>
+                    ) : chapter.tags.length > 0 ? (
+                        <article
+                            className="resumeCell"
+                            style={{ '--module-delay': '1180ms' } as StyleWithVars}
+                        >
+                            <span className="resumeLabel">{chapter.stackLabel ?? 'Tech Stack'}</span>
+                            <div className="resumeStack" aria-label={`${chapter.title} technologies`}>
+                                {chapter.tags.map((tag, tagIndex) => (
+                                    <small
+                                        key={tag}
+                                        style={{
+                                            '--pill-delay': `${1410 + tagIndex * 58}ms`
+                                        } as StyleWithVars}
+                                    >
+                                        {tag}
+                                    </small>
+                                ))}
+                            </div>
+                        </article>
+                    ) : null}
 
                     {chapter.callouts.slice(2, 3).map(callout => (
                         <article
@@ -121,8 +179,13 @@ const CoreBrief = ({
                                 ))}
                             </ul>
                             {callout.href ? (
-                                <a href={callout.href} target="_blank" rel="noreferrer">
-                                    Open signal
+                                <a
+                                    className="resumeLink"
+                                    href={callout.href}
+                                    target={isExternalHref(callout.href) ? '_blank' : undefined}
+                                    rel={isExternalHref(callout.href) ? 'noreferrer' : undefined}
+                                >
+                                    {getActionLabel(callout.category)}
                                 </a>
                             ) : null}
                         </article>
@@ -146,6 +209,7 @@ export const SolarExplorer = () => {
     const coreCloseTimerRef = useRef(0);
     const [activePlanetIndex, setActivePlanetIndex] = useState(-1);
     const [, setHoveredPlanetIndex] = useState<number | null>(null);
+    const [isSceneReady, setIsSceneReady] = useState(false);
     const [coreBrief, setCoreBrief] = useState({
         render: false,
         exiting: false,
@@ -160,6 +224,9 @@ export const SolarExplorer = () => {
         const scene = new SolarSystemScene(containerRef.current, setHoveredPlanetIndex);
         sceneRef.current = scene;
         scene.start();
+        const readyFrame = window.requestAnimationFrame(() => {
+            setIsSceneReady(true);
+        });
 
         const nav = new NavigationManager(
             scene,
@@ -193,12 +260,14 @@ export const SolarExplorer = () => {
         navRef.current = nav;
 
         return () => {
+            window.cancelAnimationFrame(readyFrame);
             window.clearTimeout(coreCloseTimerRef.current);
             scene.dispose();
             nav.dispose();
             sceneRef.current = null;
             navRef.current = null;
             setHoveredPlanetIndex(null);
+            setIsSceneReady(false);
         };
     }, []);
 
@@ -230,7 +299,7 @@ export const SolarExplorer = () => {
                 />
             ) : null}
 
-            {!coreBrief.render && activePlanetIndex < 0 ? (
+            {isSceneReady && !coreBrief.render && activePlanetIndex < 0 ? (
                 <div className="exploreHint" aria-hidden="true">
                     <span className="hintLine left" />
                     <span className="hintText">Zoom to explore</span>
@@ -238,7 +307,7 @@ export const SolarExplorer = () => {
                 </div>
             ) : null}
 
-            {!coreBrief.render && activePlanetIndex >= 0 ? (
+            {isSceneReady && !coreBrief.render && activePlanetIndex >= 0 ? (
                 <div className="exploreHint focused" aria-hidden="true">
                     <span className="hintLine left" />
                     <span className="hintText">Zoom to flatten surface</span>
@@ -256,7 +325,7 @@ export const SolarExplorer = () => {
                     color: #edf7ff;
                     pointer-events: none;
                     perspective: 1400px;
-                    font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+                    font-family: var(--font-body);
                 }
 
                 .surfaceVignette {
@@ -395,6 +464,7 @@ export const SolarExplorer = () => {
                     aspect-ratio: 1;
                     color: color-mix(in srgb, var(--surface-accent), white 24%);
                     font-size: clamp(1.12rem, 1.4vw, 1.5rem);
+                    font-family: var(--font-code);
                     font-weight: 760;
                     letter-spacing: 0.02em;
                     border-radius: 50%;
@@ -414,6 +484,7 @@ export const SolarExplorer = () => {
                 .resumeHeading h2 {
                     margin: 0;
                     color: #ffffff;
+                    font-family: var(--font-display);
                     font-size: clamp(1.82rem, 2.75vw, 2.82rem);
                     line-height: 1.02;
                     font-weight: 880;
@@ -446,6 +517,7 @@ export const SolarExplorer = () => {
 
                 .resumeMeta span {
                     font-size: clamp(0.68rem, 0.82vw, 0.78rem);
+                    font-family: var(--font-code);
                     font-weight: 760;
                     white-space: nowrap;
                     text-shadow: 0 2px 12px rgba(0, 0, 0, 0.58);
@@ -454,6 +526,7 @@ export const SolarExplorer = () => {
                 .resumeMeta b {
                     color: rgba(255, 255, 255, 0.9);
                     font-size: 0.52rem;
+                    font-family: var(--font-code);
                     font-weight: 900;
                     letter-spacing: 0.18em;
                     text-transform: uppercase;
@@ -510,6 +583,7 @@ export const SolarExplorer = () => {
                     max-width: 100%;
                     color: rgba(255, 232, 186, 0.82);
                     font-size: 0.58rem;
+                    font-family: var(--font-code);
                     font-weight: 900;
                     letter-spacing: 0.18em;
                     line-height: 1;
@@ -520,6 +594,7 @@ export const SolarExplorer = () => {
                 .resumeCell h3 {
                     margin: 0;
                     color: #ffffff;
+                    font-family: var(--font-display);
                     font-size: clamp(0.96rem, 1.2vw, 1.16rem);
                     line-height: 1.12;
                     font-weight: 840;
@@ -581,23 +656,55 @@ export const SolarExplorer = () => {
                     padding: 5px 9px 4px;
                     color: #fff3d7;
                     font-size: clamp(0.62rem, 0.76vw, 0.7rem);
+                    font-family: var(--font-code);
                     font-weight: 760;
                     line-height: 1;
                     border: 1px solid color-mix(in srgb, var(--surface-accent), transparent 42%);
                     border-radius: 999px;
                     background: rgba(0, 0, 0, 0.28);
                     text-shadow: 0 2px 10px rgba(0, 0, 0, 0.54);
+                    opacity: 0;
+                    transform: translate3d(0, 7px, 0) scale(0.94);
+                    animation: pillReveal 420ms var(--pill-delay) cubic-bezier(0.19, 1, 0.22, 1) forwards;
+                    will-change: transform, opacity;
+                }
+
+                .coreBriefOverlay.exiting .resumeMiniTags small,
+                .coreBriefOverlay.exiting .resumeStack small {
+                    animation: pillExit 180ms ease forwards;
                 }
 
                 .resumeCell a {
                     width: max-content;
+                    max-width: 100%;
                     color: color-mix(in srgb, var(--surface-accent), white 20%);
                     font-size: 0.56rem;
+                    font-family: var(--font-code);
                     font-weight: 900;
                     letter-spacing: 0.12em;
                     text-transform: uppercase;
                     text-decoration: none;
                     pointer-events: auto;
+                }
+
+                .resumeCell a.resumeDownload {
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    min-height: 30px;
+                    margin-top: 2px;
+                    padding: 8px 12px 7px;
+                    color: #081016;
+                    font-size: clamp(0.64rem, 0.78vw, 0.72rem);
+                    letter-spacing: 0.1em;
+                    border: 1px solid color-mix(in srgb, var(--surface-accent), white 16%);
+                    border-radius: 999px;
+                    background:
+                        linear-gradient(135deg, color-mix(in srgb, var(--surface-accent), white 36%), color-mix(in srgb, var(--surface-accent), white 4%));
+                    box-shadow:
+                        0 0 22px color-mix(in srgb, var(--surface-glow), transparent 38%),
+                        inset 0 1px 0 rgba(255, 255, 255, 0.42);
+                    text-shadow: none;
                 }
 
                 .surfaceHeader,
@@ -905,7 +1012,7 @@ export const SolarExplorer = () => {
                     transform: translateX(-50%);
                     pointer-events: none;
                     color: rgba(232, 242, 255, 0.74);
-                    font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+                    font-family: var(--font-code);
                     opacity: 0;
                     animation: hintReveal 720ms 520ms ease forwards;
                 }
@@ -1013,6 +1120,28 @@ export const SolarExplorer = () => {
                     to {
                         opacity: 0;
                         transform: translate3d(0, 8px, 0);
+                    }
+                }
+
+                @keyframes pillReveal {
+                    0% {
+                        opacity: 0;
+                        transform: translate3d(0, 7px, 0) scale(0.94);
+                    }
+                    72% {
+                        opacity: 1;
+                        transform: translate3d(0, -1px, 0) scale(1.015);
+                    }
+                    100% {
+                        opacity: 1;
+                        transform: translate3d(0, 0, 0) scale(1);
+                    }
+                }
+
+                @keyframes pillExit {
+                    to {
+                        opacity: 0;
+                        transform: translate3d(0, 4px, 0) scale(0.96);
                     }
                 }
 

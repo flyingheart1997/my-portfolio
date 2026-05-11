@@ -8,14 +8,26 @@ export interface PortfolioCallout {
     href?: string;
 }
 
+export interface PortfolioActionPanel {
+    category: string;
+    title: string;
+    subtitle: string;
+    highlights: string[];
+    href: string;
+    cta: string;
+    download?: string;
+}
+
 export interface PortfolioMissionChapter {
     planet: string;
     section: string;
     title: string;
     subtitle: string;
     tags: string[];
+    stackLabel?: string;
     impact: string;
     callouts: PortfolioCallout[];
+    actionPanel?: PortfolioActionPanel;
 }
 
 export const PORTFOLIO_MISSION_DATA: PortfolioMissionChapter[] = [
@@ -24,7 +36,35 @@ export const PORTFOLIO_MISSION_DATA: PortfolioMissionChapter[] = [
         section: 'Profile',
         title: 'Koushik Mondal',
         subtitle: 'Software Engineer - Satellite Simulation & Scalable Web Systems',
-        tags: ['Pune, India', 'Next.js', 'React', 'TypeScript', 'Cesium', 'Mapbox'],
+        stackLabel: 'Complete Stack',
+        tags: [
+            'TypeScript',
+            'JavaScript',
+            'React',
+            'Next.js',
+            'Tailwind CSS',
+            'ShadCN UI',
+            'Cesium JS',
+            'Mapbox',
+            'Node.js',
+            'Express.js',
+            'REST API',
+            'GraphQL',
+            'WebSocket',
+            'tRPC',
+            'oRPC',
+            'MongoDB',
+            'PostgreSQL',
+            'Prisma',
+            'Redux',
+            'Zustand',
+            'TanStack Query',
+            'Git',
+            'Azure DevOps',
+            'Jira',
+            'Supabase',
+            'Convex'
+        ],
         impact: 'Builds advanced interactive systems across satellite simulation, geospatial visualization, and scalable frontend architecture.',
         callouts: [
             {
@@ -58,7 +98,8 @@ export const PORTFOLIO_MISSION_DATA: PortfolioMissionChapter[] = [
                     'LinkedIn: koushik-mondal-0a299723b',
                     'GitHub: flyingheart1997'
                 ],
-                impact: 'Open for roles and projects around simulation, geospatial, and scalable frontend systems.'
+                impact: 'Open for roles and projects around simulation, geospatial, and scalable frontend systems.',
+                href: 'mailto:koushikm718@gmail.com'
             }
         ]
     },
@@ -110,14 +151,14 @@ export const PORTFOLIO_MISSION_DATA: PortfolioMissionChapter[] = [
         section: 'Backend',
         title: 'Backend & Data Layer',
         subtitle: 'API integration, data models, and reliable application flows',
-        tags: ['Node.js', 'Express.js', 'REST API', 'GraphQL', 'tRPC', 'oRPC', 'Prisma'],
+        tags: ['Node.js', 'Express.js', 'REST API', 'GraphQL', 'WebSocket', 'tRPC', 'oRPC', 'Prisma'],
         impact: 'Connects modern frontend systems to clean APIs, durable data models, and predictable data-fetching patterns.',
         callouts: [
             {
                 category: 'API Integration',
                 title: 'Service Workflows',
-                subtitle: 'REST, GraphQL, tRPC, and oRPC integration',
-                tags: ['REST', 'GraphQL', 'tRPC', 'oRPC'],
+                subtitle: 'REST, GraphQL, WebSocket, tRPC, and oRPC integration',
+                tags: ['REST', 'GraphQL', 'WebSocket', 'tRPC'],
                 highlights: [
                     'Integrates backend services into production frontend workflows.',
                     'Keeps API boundaries clean, typed, and predictable.'
@@ -371,8 +412,20 @@ export const PORTFOLIO_MISSION_DATA: PortfolioMissionChapter[] = [
         section: 'Contact',
         title: 'Open Signal',
         subtitle: 'Reach out for simulation, geospatial, and scalable frontend opportunities',
-        tags: ['Email', 'LinkedIn', 'GitHub', 'Pune'],
+        tags: [],
         impact: 'Available for conversations around satellite simulation, geospatial visualization, and advanced frontend systems.',
+        actionPanel: {
+            category: 'Resume',
+            title: 'Koushik_Mondal_Resume.pdf',
+            subtitle: 'Download the latest resume as a PDF',
+            highlights: [
+                'One-click recruiter-friendly resume download.',
+                'Includes experience, projects, and technical skills.'
+            ],
+            href: '/Koushik_Mondal_Resume.pdf',
+            cta: 'Download resume',
+            download: 'Koushik_Mondal_Resume.pdf'
+        },
         callouts: [
             {
                 category: 'Email',
@@ -383,7 +436,8 @@ export const PORTFOLIO_MISSION_DATA: PortfolioMissionChapter[] = [
                     'Best channel for project, role, and collaboration conversations.',
                     'Phone: 7003885674'
                 ],
-                impact: 'Direct channel for recruiter and product-team conversations.'
+                impact: 'Direct channel for recruiter and product-team conversations.',
+                href: 'mailto:koushikm718@gmail.com'
             },
             {
                 category: 'LinkedIn',

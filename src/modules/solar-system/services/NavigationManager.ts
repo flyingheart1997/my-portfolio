@@ -15,6 +15,7 @@ export class NavigationManager {
     private inputLockedUntil = 0;
     private wheelIntent = 0;
     private wheelResetId: number | null = null;
+    private lastWheelStepAt = 0;
     private activePlanetIndex: number;
     private isDragging = false;
     private readonly pressedKeys = new Set<string>();
@@ -92,10 +93,17 @@ export class NavigationManager {
             this.wheelResetId = null;
         }, 180);
 
-        const threshold = event.ctrlKey || event.metaKey ? 24 : 58;
+        const threshold = event.ctrlKey || event.metaKey ? 34 : 76;
         if (Math.abs(this.wheelIntent) < threshold) return;
 
-        const stepDirection = Math.sign(this.wheelIntent);
+        const now = performance.now();
+        if (now - this.lastWheelStepAt < 920) {
+            this.wheelIntent = 0;
+            return;
+        }
+
+        const stepDirection = -Math.sign(this.wheelIntent);
+        this.lastWheelStepAt = now;
         this.wheelIntent = 0;
         if (this.wheelResetId !== null) {
             window.clearTimeout(this.wheelResetId);
@@ -146,15 +154,17 @@ export class NavigationManager {
     private setNavigationProgress(progress: number, duration = 2.2) {
         this.targetProgress = gsap.utils.clamp(0, 1, progress);
         this.navigationTween?.kill();
+        this.sceneManager.setNavigationActive(true);
         this.navigationTween = gsap.to(this.navigationState, {
             progress: this.targetProgress,
             duration,
-            ease: 'power2.out',
+            ease: 'sine.inOut',
             overwrite: true,
             onUpdate: () => this.applyProgress(this.navigationState.progress),
             onComplete: () => {
                 this.navigationState.progress = this.targetProgress;
                 this.applyProgress(this.targetProgress);
+                this.sceneManager.setNavigationActive(false);
                 this.navigationTween = null;
             }
         });
@@ -169,11 +179,11 @@ export class NavigationManager {
                 nextStep = 0;
             } else if (this.coreBriefStage === 'idle') {
                 this.openCoreBrief();
-                this.inputLockedUntil = performance.now() + 760;
+                this.inputLockedUntil = performance.now() + 1380;
                 return;
             } else if (this.coreBriefStage === 'open') {
                 this.closeCoreBrief('restored');
-                this.inputLockedUntil = performance.now() + 760;
+                this.inputLockedUntil = performance.now() + 1080;
                 return;
             } else {
                 this.coreBriefStage = 'idle';
@@ -182,7 +192,7 @@ export class NavigationManager {
         } else {
             if (this.coreBriefStage === 'open') {
                 this.closeCoreBrief('idle');
-                this.inputLockedUntil = performance.now() + 700;
+                this.inputLockedUntil = performance.now() + 1080;
                 return;
             }
             this.coreBriefStage = 'idle';
@@ -192,11 +202,12 @@ export class NavigationManager {
         this.currentStep = nextStep;
 
         if (nextStep === -1) {
-            this.inputLockedUntil = performance.now() + 1250;
-            this.setNavigationProgress(0, 1.85);
+            this.inputLockedUntil = performance.now() + 1180;
+            this.jumpNavigationProgress(0);
             return;
         }
 
+        this.inputLockedUntil = performance.now() + 1280;
         this.setNavigationProgress(this.sceneManager.getProgressForFocusStep(nextStep), 2.15);
     }
 
@@ -224,6 +235,7 @@ export class NavigationManager {
         this.targetProgress = gsap.utils.clamp(0, 1, progress);
         this.navigationTween?.kill();
         this.navigationTween = null;
+        this.sceneManager.setNavigationActive(false);
         this.closeCoreBrief('idle');
         this.navigationState.progress = this.targetProgress;
         this.applyProgress(this.targetProgress);
@@ -287,5 +299,6 @@ export class NavigationManager {
         }
         this.navigationTween?.kill();
         this.navigationTween = null;
+        this.sceneManager.setNavigationActive(false);
     }
 }
