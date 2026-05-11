@@ -1,283 +1,203 @@
 'use client';
 
-import { CSSProperties, useEffect, useMemo, useRef, useState } from 'react';
+import { CSSProperties, useEffect, useRef, useState } from 'react';
 import { SolarSystemScene } from './SolarSystemScene';
 import { NavigationManager } from '../services/NavigationManager';
-import { PORTFOLIO_MISSION_DATA, PortfolioCallout } from '../data/PortfolioMissionData';
-
-interface ScreenAnchor {
-    x: number;
-    y: number;
-    visible: boolean;
-    radius: number;
-}
-
-interface ViewportSize {
-    width: number;
-    height: number;
-}
-
-interface CalloutLayout {
-    left: number;
-    top?: number;
-    bottom?: number;
-    width: number;
-    minHeight: number;
-    anchorX: number;
-    anchorY: number;
-    direction: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
-}
-
-interface OverlayLayout {
-    hub: CalloutLayout;
-    cards: CalloutLayout[];
-    allCards: CalloutLayout[];
-}
+import { PORTFOLIO_MISSION_DATA, PortfolioMissionChapter } from '../data/PortfolioMissionData';
 
 type StyleWithVars = CSSProperties & Record<`--${string}`, string | number>;
 
-const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
+const SURFACE_THEMES = [
+    ['#ffcf62', '#ff7b1a', '#281004', '#ffd58a', 'rgba(255, 126, 24, 0.34)'],
+    ['#c8d2db', '#626b75', '#10151b', '#8fd2ff', 'rgba(139, 198, 255, 0.22)'],
+    ['#ffd08a', '#b96f24', '#170d05', '#ffe0a8', 'rgba(255, 160, 62, 0.25)'],
+    ['#7dc9ff', '#1166bb', '#02172f', '#42f1d2', 'rgba(64, 170, 255, 0.28)'],
+    ['#ff9b58', '#a13b20', '#1b0705', '#ffc08a', 'rgba(255, 101, 54, 0.24)'],
+    ['#f1d29b', '#9c7441', '#171008', '#f7d288', 'rgba(255, 204, 132, 0.22)'],
+    ['#dbc89e', '#7d6843', '#14120c', '#ffe3a6', 'rgba(236, 210, 154, 0.24)'],
+    ['#a6ecff', '#5d96aa', '#06181f', '#bff7ff', 'rgba(126, 226, 255, 0.22)'],
+    ['#4f8dff', '#092f9b', '#010b2c', '#44e3ff', 'rgba(64, 120, 255, 0.3)']
+] as const;
 
-const getOverlayLayout = (viewport: ViewportSize): OverlayLayout => {
-    const isMobile = viewport.width < 760;
-    const cardWidth = isMobile ? Math.min(viewport.width - 28, 322) : clamp(viewport.width * 0.25, 350, 392);
-    const cardHeight = isMobile ? 132 : 154;
-    const edge = isMobile ? 14 : 50;
+const formatMissionIndex = (index: number) => `0${index + 1}`.slice(-2);
 
-    const makeLayout = (direction: CalloutLayout['direction']): CalloutLayout => {
-        const isLeft = direction.endsWith('left');
-        const isTop = direction.startsWith('top');
-        const left = isLeft ? edge : viewport.width - cardWidth - edge;
-        const top = isTop ? edge : undefined;
-        const bottom = isTop ? undefined : edge;
-        const anchorY = isTop
-            ? edge + cardHeight / 2
-            : viewport.height - edge - cardHeight / 2;
-
-        return {
-            left,
-            top,
-            bottom,
-            width: cardWidth,
-            minHeight: cardHeight,
-            anchorX: isLeft ? left + cardWidth : left,
-            anchorY,
-            direction
-        };
-    };
-
-    const hub = makeLayout('top-left');
-    const cards = [
-        makeLayout('top-right'),
-        makeLayout('bottom-left'),
-        makeLayout('bottom-right')
-    ];
+const getSurfaceStyle = (index: number) => {
+    const theme = SURFACE_THEMES[index] ?? SURFACE_THEMES[0];
 
     return {
-        hub,
-        cards,
-        allCards: [hub, ...cards]
-    };
+        '--surface-core': theme[0],
+        '--surface-mid': theme[1],
+        '--surface-edge': theme[2],
+        '--surface-accent': theme[3],
+        '--surface-glow': theme[4]
+    } as StyleWithVars;
 };
 
-const getConnectorPath = (from: ScreenAnchor, card: CalloutLayout) => {
-    const isLeft = card.direction.endsWith('left');
-    const elbowX = card.anchorX + (isLeft ? 72 : -72);
-    const elbowY = card.anchorY;
-    const directionX = elbowX - from.x;
-    const directionY = elbowY - from.y;
-    const length = Math.max(Math.hypot(directionX, directionY), 1);
-    const startPadding = Math.min(Math.max(from.radius + 14, 22), Math.max(length - 36, 22));
-    const startX = from.x + (directionX / length) * startPadding;
-    const startY = from.y + (directionY / length) * startPadding;
-
-    return `M ${startX} ${startY} L ${elbowX} ${elbowY} L ${card.anchorX} ${card.anchorY}`;
-};
-
-const CalloutCard = ({
-    callout,
-    index,
-    layout
+const CoreBrief = ({
+    chapter,
+    chapterIndex,
+    exiting
 }: {
-    callout: PortfolioCallout;
-    index: number;
-    layout: CalloutLayout;
-}) => {
-    const style = {
-        left: layout.left,
-        ...(layout.top !== undefined ? { top: layout.top } : { bottom: layout.bottom }),
-        width: layout.width,
-        minHeight: layout.minHeight,
-        '--card-delay': `${760 + index * 260}ms`,
-        '--card-min-height': `${layout.minHeight}px`
-    } satisfies StyleWithVars;
-    const content = (
-        <>
-            <div className="calloutHeader">
-                <span className="typeLine">{callout.category}</span>
-                {callout.href ? <b className="typeLine">OPEN</b> : null}
-            </div>
-            <h3 className="typeLine">{callout.title}</h3>
-            <p className="calloutSubtitle typeLine">{callout.subtitle}</p>
-            <div className="calloutDetails">
-                {callout.details.map((detail, detailIndex) => (
-                    <p
-                        className="typeLine"
-                        key={detail}
-                        style={{ '--text-delay': `${1370 + index * 260 + detailIndex * 120}ms` } as StyleWithVars}
+    chapter: PortfolioMissionChapter;
+    chapterIndex: number;
+    exiting: boolean;
+}) => (
+    <div
+        className={`coreBriefOverlay ${exiting ? 'exiting' : 'entering'}`}
+        style={getSurfaceStyle(chapterIndex)}
+    >
+        <div className="surfaceVignette" />
+
+        <section className="flatSurface" aria-label={`${chapter.section} flat planet surface`}>
+            <div className="surfaceTexture" aria-hidden="true" />
+            <div className="surfaceScan" aria-hidden="true" />
+
+            <div className="resumeBoard">
+                <header className="resumeHero">
+                    <div className="resumeAvatar typeLine" aria-hidden="true">
+                        KM
+                    </div>
+                    <div className="resumeHeading">
+                        <h2 className={`typeLine ${chapterIndex === 0 ? 'singleLineTitle' : ''}`}>{chapter.title}</h2>
+                        <p className="typeLine">{chapter.subtitle}</p>
+                    </div>
+                    <div className="resumeMeta typeLine">
+                        <span>{chapterIndex === 0 ? 'Pune, India' : `Mission ${formatMissionIndex(chapterIndex)}`}</span>
+                        <b>{chapter.section}</b>
+                    </div>
+                </header>
+
+                <section className="resumeImpact typeLine" style={{ '--text-delay': '760ms' } as StyleWithVars}>
+                    {chapter.impact}
+                </section>
+
+                <div className="resumeGrid">
+                    {chapter.callouts.slice(0, 2).map((callout, index) => (
+                        <article
+                            className="resumeCell"
+                            key={`${callout.category}-${callout.title}`}
+                            style={{ '--module-delay': `${940 + index * 120}ms` } as StyleWithVars}
+                        >
+                            <span className="resumeLabel">{callout.category}</span>
+                            <h3>{callout.title}</h3>
+                            <p>{callout.subtitle}</p>
+                            <ul>
+                                {callout.highlights.map(highlight => (
+                                    <li key={highlight}>{highlight}</li>
+                                ))}
+                            </ul>
+                            <div className="resumeMiniTags" aria-label={`${callout.title} signals`}>
+                                {callout.tags.slice(0, 3).map(tag => (
+                                    <small key={tag}>{tag}</small>
+                                ))}
+                            </div>
+                        </article>
+                    ))}
+
+                    <article
+                        className="resumeCell"
+                        style={{ '--module-delay': '1180ms' } as StyleWithVars}
                     >
-                        {detail}
-                    </p>
-                ))}
+                        <span className="resumeLabel">Tech Stack</span>
+                        <div className="resumeStack" aria-label={`${chapter.title} technologies`}>
+                            {chapter.tags.map(tag => (
+                                <small key={tag}>{tag}</small>
+                            ))}
+                        </div>
+                    </article>
+
+                    {chapter.callouts.slice(2, 3).map(callout => (
+                        <article
+                            className="resumeCell"
+                            key={`${callout.category}-${callout.title}`}
+                            style={{ '--module-delay': '1300ms' } as StyleWithVars}
+                        >
+                            <span className="resumeLabel">{callout.category}</span>
+                            <h3>{callout.title}</h3>
+                            <p>{callout.subtitle}</p>
+                            <ul>
+                                {callout.highlights.map(highlight => (
+                                    <li key={highlight}>{highlight}</li>
+                                ))}
+                            </ul>
+                            {callout.href ? (
+                                <a href={callout.href} target="_blank" rel="noreferrer">
+                                    Open signal
+                                </a>
+                            ) : null}
+                        </article>
+                    ))}
+                </div>
             </div>
-        </>
-    );
+        </section>
 
-    if (callout.href) {
-        return (
-            <a className="calloutCard" href={callout.href} target="_blank" rel="noreferrer" style={style}>
-                {content}
-            </a>
-        );
-    }
-
-    return (
-        <div className="calloutCard" style={style}>
-            {content}
+        <div className="coreHint" aria-hidden="true">
+            <span />
+            <b>Zoom to restore globe</b>
+            <span />
         </div>
-    );
-};
-
-const CategoryHub = ({
-    section,
-    title,
-    subtitle,
-    mode,
-    layout
-}: {
-    section: string;
-    title: string;
-    subtitle: string;
-    mode: string;
-    layout: CalloutLayout;
-}) => {
-    const style = {
-        left: layout.left,
-        ...(layout.top !== undefined ? { top: layout.top } : { bottom: layout.bottom }),
-        width: layout.width,
-        minHeight: layout.minHeight,
-        '--card-delay': '420ms',
-        '--card-min-height': `${layout.minHeight}px`
-    } satisfies StyleWithVars;
-
-    return (
-        <div className="categoryHub" style={style}>
-            <span className="typeLine">{mode}</span>
-            <h2 className="typeLine">{section}</h2>
-            <p className="typeLine">{title}</p>
-            <b className="typeLine">{subtitle}</b>
-        </div>
-    );
-};
+    </div>
+);
 
 export const SolarExplorer = () => {
     const containerRef = useRef<HTMLDivElement>(null);
     const sceneRef = useRef<SolarSystemScene | null>(null);
     const navRef = useRef<NavigationManager | null>(null);
-    const selectedIndexRef = useRef(0);
+    const coreCloseTimerRef = useRef(0);
     const [activePlanetIndex, setActivePlanetIndex] = useState(-1);
-    const [hoveredPlanetIndex, setHoveredPlanetIndex] = useState<number | null>(null);
-    const [viewport, setViewport] = useState<ViewportSize>({ width: 1440, height: 900 });
-    const [planetAnchor, setPlanetAnchor] = useState<ScreenAnchor>({ x: 720, y: 450, visible: false, radius: 0 });
-    const [renderOverlay, setRenderOverlay] = useState(false);
-    const [isOverlayExiting, setIsOverlayExiting] = useState(false);
-    const [displayedOverlay, setDisplayedOverlay] = useState({ index: 0, preview: false });
+    const [, setHoveredPlanetIndex] = useState<number | null>(null);
+    const [coreBrief, setCoreBrief] = useState({
+        render: false,
+        exiting: false,
+        index: 0
+    });
 
-    const selectedPlanetIndex = activePlanetIndex >= 0 ? activePlanetIndex : 0;
-    const isPreview = false;
-    const shouldShowOverlay = activePlanetIndex >= 0;
-    const overlayPlanetIndex = renderOverlay ? displayedOverlay.index : selectedPlanetIndex;
-    const activeChapter = PORTFOLIO_MISSION_DATA[overlayPlanetIndex] ?? PORTFOLIO_MISSION_DATA[0];
-    const overlayLayout = useMemo(
-        () => getOverlayLayout(viewport),
-        [viewport]
-    );
-
-    useEffect(() => {
-        selectedIndexRef.current = selectedPlanetIndex;
-    }, [selectedPlanetIndex]);
-
-    useEffect(() => {
-        let timeoutId = 0;
-
-        if (shouldShowOverlay) {
-            setDisplayedOverlay({ index: selectedPlanetIndex, preview: isPreview });
-            setRenderOverlay(true);
-            setIsOverlayExiting(false);
-            return () => window.clearTimeout(timeoutId);
-        }
-
-        if (renderOverlay) {
-            setIsOverlayExiting(true);
-            timeoutId = window.setTimeout(() => {
-                setRenderOverlay(false);
-                setIsOverlayExiting(false);
-            }, 560);
-        }
-
-        return () => window.clearTimeout(timeoutId);
-    }, [isPreview, renderOverlay, selectedPlanetIndex, shouldShowOverlay]);
+    const activeChapter = PORTFOLIO_MISSION_DATA[coreBrief.index] ?? PORTFOLIO_MISSION_DATA[0];
 
     useEffect(() => {
         if (!containerRef.current) return;
-
-        const syncViewport = () => {
-            const rect = containerRef.current?.getBoundingClientRect();
-            setViewport({
-                width: rect?.width || window.innerWidth,
-                height: rect?.height || window.innerHeight
-            });
-        };
 
         const scene = new SolarSystemScene(containerRef.current, setHoveredPlanetIndex);
         sceneRef.current = scene;
         scene.start();
 
-        const nav = new NavigationManager(scene, setActivePlanetIndex);
+        const nav = new NavigationManager(
+            scene,
+            setActivePlanetIndex,
+            (open, planetIndex) => {
+                window.clearTimeout(coreCloseTimerRef.current);
+
+                if (open) {
+                    setCoreBrief({
+                        render: true,
+                        exiting: false,
+                        index: Math.max(planetIndex, 0)
+                    });
+                    return;
+                }
+
+                setCoreBrief(previous => {
+                    if (!previous.render) return previous;
+                    return { ...previous, exiting: true };
+                });
+
+                coreCloseTimerRef.current = window.setTimeout(() => {
+                    setCoreBrief(previous => ({
+                        ...previous,
+                        render: false,
+                        exiting: false
+                    }));
+                }, 620);
+            }
+        );
         navRef.current = nav;
 
-        syncViewport();
-        window.addEventListener('resize', syncViewport);
-
-        let frameId = 0;
-        const syncAnchor = () => {
-            const position = scene.getPlanetScreenPosition(selectedIndexRef.current);
-
-            if (position) {
-                setPlanetAnchor(previous => {
-                    const next = {
-                        x: position.x,
-                        y: position.y,
-                        visible: position.visible,
-                        radius: position.radius
-                    };
-                    const changed = Math.abs(previous.x - next.x) > 0.5
-                        || Math.abs(previous.y - next.y) > 0.5
-                        || Math.abs(previous.radius - next.radius) > 0.5
-                        || previous.visible !== next.visible;
-                    return changed ? next : previous;
-                });
-            }
-
-            frameId = requestAnimationFrame(syncAnchor);
-        };
-        syncAnchor();
-
         return () => {
-            cancelAnimationFrame(frameId);
-            window.removeEventListener('resize', syncViewport);
+            window.clearTimeout(coreCloseTimerRef.current);
             scene.dispose();
             nav.dispose();
+            sceneRef.current = null;
+            navRef.current = null;
             setHoveredPlanetIndex(null);
         };
     }, []);
@@ -301,375 +221,684 @@ export const SolarExplorer = () => {
                 }}
             />
 
-            {renderOverlay ? (
-            <div
-                className={`portfolioOverlay ${isOverlayExiting ? 'exiting' : 'entering'}`}
-                key={`${overlayPlanetIndex}-${displayedOverlay.preview ? 'preview' : 'focus'}`}
-            >
-                <svg className="connectorLayer" viewBox={`0 0 ${viewport.width} ${viewport.height}`} aria-hidden="true">
-                    <circle className="anchorPulse" cx={planetAnchor.x} cy={planetAnchor.y} r="18" />
-                    <circle className="anchorDot" cx={planetAnchor.x} cy={planetAnchor.y} r="3.5" />
-                    {overlayLayout.allCards.map((layout, index) => (
-                        <path
-                            key={`${activeChapter.planet}-${layout.direction}`}
-                            className={`connectorLine radialConnector ${index === 0 ? 'primaryConnector' : ''}`}
-                            d={getConnectorPath(planetAnchor, layout)}
-                            style={{ '--line-delay': `${index * 130}ms` } as StyleWithVars}
-                        />
-                    ))}
-                </svg>
-
-                <CategoryHub
-                    section={activeChapter.section}
-                    title={activeChapter.title}
-                    subtitle={activeChapter.subtitle}
-                    mode={displayedOverlay.preview ? 'Preview' : 'Focus'}
-                    layout={overlayLayout.hub}
+            {coreBrief.render ? (
+                <CoreBrief
+                    chapter={activeChapter}
+                    chapterIndex={coreBrief.index}
+                    exiting={coreBrief.exiting}
+                    key={`${coreBrief.index}-${coreBrief.exiting ? 'out' : 'in'}`}
                 />
-
-                {activeChapter.callouts.map((callout, index) => (
-                    <CalloutCard
-                        key={`${activeChapter.planet}-${callout.category}-${callout.title}`}
-                        callout={callout}
-                        index={index}
-                        layout={overlayLayout.cards[index]}
-                    />
-                ))}
-
-                <div className="chapterRail" aria-hidden="true">
-                    {PORTFOLIO_MISSION_DATA.map((chapter, index) => (
-                        <span
-                            key={chapter.planet}
-                            className={index === overlayPlanetIndex ? 'active' : ''}
-                        />
-                    ))}
-                </div>
-            </div>
             ) : null}
 
-            {!renderOverlay && activePlanetIndex < 0 ? (
-                <div className="initialExploreHint" aria-hidden="true">
+            {!coreBrief.render && activePlanetIndex < 0 ? (
+                <div className="exploreHint" aria-hidden="true">
                     <span className="hintLine left" />
                     <span className="hintText">Zoom to explore</span>
                     <span className="hintLine right" />
                 </div>
             ) : null}
 
-            <style jsx>{`
-                .portfolioOverlay {
+            {!coreBrief.render && activePlanetIndex >= 0 ? (
+                <div className="exploreHint focused" aria-hidden="true">
+                    <span className="hintLine left" />
+                    <span className="hintText">Zoom to flatten surface</span>
+                    <span className="hintLine right" />
+                </div>
+            ) : null}
+
+            <style jsx global>{`
+                .coreBriefOverlay {
                     position: fixed;
                     inset: 0;
-                    z-index: 5;
+                    z-index: 6;
+                    display: grid;
+                    place-items: center;
+                    color: #edf7ff;
                     pointer-events: none;
-                    color: #eef5ff;
+                    perspective: 1400px;
                     font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
                 }
 
-                .connectorLayer {
+                .surfaceVignette {
                     position: absolute;
                     inset: 0;
-                    width: 100%;
-                    height: 100%;
-                    overflow: visible;
-                }
-
-                .connectorLine {
-                    fill: none;
-                    stroke: rgba(44, 229, 255, 0.46);
-                    stroke-width: 1.15;
-                    stroke-dasharray: 8 8;
-                    filter: drop-shadow(0 0 8px rgba(35, 218, 255, 0.24));
+                    background:
+                        radial-gradient(circle at center, transparent 0 38%, rgba(0, 0, 0, 0.48) 72%, rgba(0, 0, 0, 0.82)),
+                        linear-gradient(180deg, rgba(1, 8, 20, 0.16), rgba(0, 0, 0, 0.42));
                     opacity: 0;
-                    animation: connectorDraw 520ms var(--line-delay, 0ms) cubic-bezier(0.19, 1, 0.22, 1) forwards;
+                    animation: surfaceVignetteIn 620ms ease forwards;
                 }
 
-                .portfolioOverlay.exiting .connectorLine {
-                    animation: connectorErase 360ms cubic-bezier(0.4, 0, 1, 1) forwards;
+                .coreBriefOverlay.exiting .surfaceVignette {
+                    animation: surfaceVignetteOut 420ms ease forwards;
                 }
 
-                .portfolioOverlay.exiting .anchorPulse,
-                .portfolioOverlay.exiting .anchorDot {
-                    animation: anchorFade 280ms ease forwards;
-                }
-
-                .primaryConnector {
-                    stroke: rgba(255, 199, 107, 0.58);
-                    stroke-width: 1.45;
-                    stroke-dasharray: 9 8;
-                    filter: drop-shadow(0 0 10px rgba(255, 190, 88, 0.3));
-                }
-
-                .anchorPulse {
-                    fill: none;
-                    stroke: rgba(143, 195, 255, 0.34);
-                    stroke-width: 1;
-                    stroke-dasharray: 4 7;
-                    transform-origin: center;
-                    opacity: 0;
-                }
-
-                .anchorDot {
-                    fill: rgba(255, 207, 137, 0.92);
-                    filter: drop-shadow(0 0 12px rgba(255, 186, 92, 0.86));
-                }
-
-                :global(.categoryHub) {
-                    position: absolute;
+                .flatSurface {
+                    position: relative;
+                    z-index: 2;
+                    width: min(1080px, calc(100vw - 96px));
+                    height: min(600px, calc(100vh - 158px));
+                    min-height: 0;
                     display: grid;
-                    align-content: start;
-                    gap: 7px;
-                    padding: 20px 22px 18px;
-                    color: #eef5ff;
-                    pointer-events: none;
+                    grid-template-rows: auto 1fr;
+                    gap: 0;
+                    padding: clamp(18px, 2.4vw, 30px);
+                    overflow: hidden;
+                    color: #f3f8ff;
+                    border: 1px solid color-mix(in srgb, var(--surface-accent), transparent 38%);
+                    border-radius: 24px;
                     background:
-                        linear-gradient(180deg, rgba(13, 22, 42, 0.92), rgba(5, 10, 21, 0.86)),
-                        radial-gradient(circle at top left, rgba(34, 230, 255, 0.12), transparent 46%);
-                    border: 1px solid rgba(35, 226, 255, 0.72);
-                    border-radius: 2px;
+                        radial-gradient(circle at 24% 16%, color-mix(in srgb, var(--surface-core), white 14%) 0 8%, transparent 22%),
+                        radial-gradient(circle at 72% 74%, color-mix(in srgb, var(--surface-mid), white 8%) 0 12%, transparent 34%),
+                        radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--surface-core), transparent 24%), color-mix(in srgb, var(--surface-mid), transparent 16%) 48%, var(--surface-edge) 100%),
+                        linear-gradient(135deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.015));
                     box-shadow:
-                        0 20px 50px rgba(0, 0, 0, 0.46),
-                        inset 0 0 0 1px rgba(255, 255, 255, 0.045),
-                        0 0 28px rgba(27, 219, 255, 0.13);
-                    backdrop-filter: blur(14px) saturate(135%);
-                    -webkit-backdrop-filter: blur(14px) saturate(135%);
+                        0 32px 120px rgba(0, 0, 0, 0.62),
+                        0 0 70px var(--surface-glow),
+                        inset 0 0 0 1px rgba(255, 255, 255, 0.055),
+                        inset 0 -70px 120px rgba(0, 0, 0, 0.28);
+                    backdrop-filter: blur(10px) saturate(132%);
+                    -webkit-backdrop-filter: blur(10px) saturate(132%);
                     opacity: 0;
-                    transform: translate3d(0, 10px, 0);
-                    animation: cardConstruct 360ms var(--card-delay) cubic-bezier(0.19, 1, 0.22, 1) forwards;
+                    transform-origin: center center;
+                    animation: surfaceFlatten 900ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
                 }
 
-                :global(.portfolioOverlay.exiting .categoryHub),
-                :global(.portfolioOverlay.exiting .calloutCard) {
-                    animation: cardDismiss 320ms cubic-bezier(0.4, 0, 1, 1) forwards;
-                }
-
-                :global(.categoryHub::before) {
+                .flatSurface::before,
+                .flatSurface::after {
                     content: "";
                     position: absolute;
-                    inset: 8px;
-                    border: 1px solid rgba(255, 255, 255, 0.055);
-                    border-radius: 2px;
+                    inset: 0;
                     pointer-events: none;
                 }
 
-                :global(.categoryHub::after),
-                :global(.calloutCard::after) {
-                    content: "";
+                .flatSurface::before {
+                    background:
+                        linear-gradient(90deg, rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.26) 45%, rgba(0, 0, 0, 0.42)),
+                        linear-gradient(180deg, rgba(0, 0, 0, 0.3), transparent 38%, rgba(0, 0, 0, 0.28)),
+                        linear-gradient(112deg, transparent 0 34%, rgba(255, 255, 255, 0.16) 42%, transparent 55%),
+                        radial-gradient(ellipse at 50% 0%, rgba(255, 255, 255, 0.11), transparent 46%);
+                    opacity: 0.92;
+                }
+
+                .flatSurface::after {
+                    inset: 12px;
+                    border: 1px solid rgba(255, 255, 255, 0.085);
+                    border-radius: 18px;
+                    box-shadow: inset 0 0 32px rgba(0, 0, 0, 0.24);
+                }
+
+                .coreBriefOverlay.exiting .flatSurface {
+                    animation: surfaceUnflatten 580ms cubic-bezier(0.55, 0, 1, 0.45) forwards;
+                }
+
+                .surfaceTexture {
                     position: absolute;
-                    inset: -1px;
+                    inset: -18%;
                     pointer-events: none;
                     background:
-                        linear-gradient(90deg, #21e8ff 0 24px, transparent 24px) left top / 74px 2px no-repeat,
-                        linear-gradient(#21e8ff 0 24px, transparent 24px) left top / 2px 74px no-repeat,
-                        linear-gradient(270deg, #21e8ff 0 24px, transparent 24px) right bottom / 74px 2px no-repeat,
-                        linear-gradient(0deg, #21e8ff 0 24px, transparent 24px) right bottom / 2px 74px no-repeat;
-                    opacity: 0.82;
+                        repeating-linear-gradient(9deg, rgba(255, 255, 255, 0.055) 0 1px, transparent 1px 12px),
+                        repeating-linear-gradient(-17deg, rgba(0, 0, 0, 0.12) 0 2px, transparent 2px 22px),
+                        radial-gradient(ellipse at 26% 44%, rgba(255, 255, 255, 0.12), transparent 24%),
+                        radial-gradient(ellipse at 78% 28%, rgba(0, 0, 0, 0.2), transparent 26%);
+                    filter: blur(0.2px);
+                    opacity: 0.62;
+                    transform: rotate(-3deg);
                 }
 
-                :global(.categoryHub span) {
-                    color: rgba(255, 200, 104, 0.96);
-                    font-size: 0.67rem;
-                    font-weight: 900;
-                    letter-spacing: 0.24em;
-                    text-transform: uppercase;
+                .surfaceScan {
+                    position: absolute;
+                    inset: 0;
+                    pointer-events: none;
+                    background:
+                        linear-gradient(90deg, rgba(255, 255, 255, 0.06) 1px, transparent 1px),
+                        linear-gradient(rgba(255, 255, 255, 0.045) 1px, transparent 1px);
+                    background-size: 54px 54px;
+                    mask-image: radial-gradient(ellipse at center, black 0 62%, transparent 90%);
+                    opacity: 0.22;
                 }
 
-                :global(.categoryHub h2) {
+                .resumeBoard {
+                    position: relative;
+                    z-index: 2;
+                    display: grid;
+                    grid-template-rows: minmax(78px, auto) minmax(68px, auto) 1fr;
+                    height: 100%;
+                    min-height: 0;
+                    overflow: hidden;
+                    border: 1px solid rgba(255, 255, 255, 0.11);
+                    border-radius: 18px;
+                    background: transparent;
+                    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045);
+                    backdrop-filter: none;
+                    -webkit-backdrop-filter: none;
+                }
+
+                .resumeHero {
+                    display: grid;
+                    grid-template-columns: auto minmax(0, 1fr) minmax(132px, auto);
+                    gap: 16px;
+                    align-items: center;
+                    padding: clamp(14px, 1.7vw, 20px);
+                    border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+                }
+
+                .resumeAvatar.typeLine,
+                .resumeMeta.typeLine {
+                    display: grid;
+                }
+
+                .resumeAvatar {
+                    display: grid;
+                    place-items: center;
+                    width: clamp(52px, 4.8vw, 68px);
+                    aspect-ratio: 1;
+                    color: color-mix(in srgb, var(--surface-accent), white 24%);
+                    font-size: clamp(1.12rem, 1.4vw, 1.5rem);
+                    font-weight: 760;
+                    letter-spacing: 0.02em;
+                    border-radius: 50%;
+                    background:
+                        radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.14), transparent 38%),
+                        color-mix(in srgb, var(--surface-accent), transparent 80%);
+                    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+                }
+
+                .resumeHeading {
+                    min-width: 0;
+                    display: grid;
+                    gap: 5px;
+                    align-items: center;
+                }
+
+                .resumeHeading h2 {
                     margin: 0;
                     color: #ffffff;
-                    font-size: 1.24rem;
-                    line-height: 1.1;
-                    font-weight: 900;
-                    letter-spacing: 0.08em;
-                    text-transform: uppercase;
+                    font-size: clamp(1.82rem, 2.75vw, 2.82rem);
+                    line-height: 1.02;
+                    font-weight: 880;
+                    letter-spacing: 0;
+                    text-shadow: 0 3px 18px rgba(0, 0, 0, 0.68);
                 }
 
-                :global(.categoryHub p) {
+                .resumeHeading h2.singleLineTitle {
+                    white-space: nowrap;
+                }
+
+                .resumeHeading p {
                     margin: 0;
-                    color: rgba(219, 232, 255, 0.84);
-                    font-size: 0.88rem;
-                    line-height: 1.45;
+                    color: rgba(255, 255, 255, 0.88);
+                    font-size: clamp(0.8rem, 1.06vw, 0.96rem);
+                    line-height: 1.32;
+                    font-weight: 650;
+                    text-shadow: 0 2px 14px rgba(0, 0, 0, 0.58);
+                }
+
+                .resumeMeta {
+                    display: grid;
+                    justify-items: end;
+                    gap: 5px;
+                    min-width: 0;
+                    color: rgba(255, 255, 255, 0.88);
+                    text-align: right;
+                    align-content: center;
+                }
+
+                .resumeMeta span {
+                    font-size: clamp(0.68rem, 0.82vw, 0.78rem);
                     font-weight: 760;
+                    white-space: nowrap;
+                    text-shadow: 0 2px 12px rgba(0, 0, 0, 0.58);
                 }
 
-                :global(.categoryHub b) {
-                    color: rgba(167, 196, 236, 0.72);
-                    font-size: 0.74rem;
-                    line-height: 1.4;
-                    font-weight: 620;
+                .resumeMeta b {
+                    color: rgba(255, 255, 255, 0.9);
+                    font-size: 0.52rem;
+                    font-weight: 900;
+                    letter-spacing: 0.18em;
+                    text-transform: uppercase;
+                    white-space: nowrap;
+                    text-shadow: 0 2px 12px rgba(0, 0, 0, 0.58);
                 }
 
-                :global(.calloutCard) {
-                    position: absolute;
-                    display: block;
-                    padding: 18px 22px 17px;
-                    color: inherit;
-                    text-decoration: none;
-                    pointer-events: auto;
+                .resumeImpact {
+                    padding: clamp(13px, 1.7vw, 20px);
+                    color: rgba(255, 255, 255, 0.92);
+                    font-size: clamp(0.86rem, 1.16vw, 1.02rem);
+                    line-height: 1.42;
+                    font-weight: 680;
+                    border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+                    text-shadow: 0 3px 18px rgba(0, 0, 0, 0.66);
+                }
+
+                .resumeGrid {
+                    display: grid;
+                    grid-template-columns: repeat(2, minmax(0, 1fr));
+                    grid-template-rows: repeat(2, minmax(0, 1fr));
+                    min-height: 0;
                     overflow: hidden;
-                    background:
-                        linear-gradient(180deg, rgba(12, 20, 38, 0.9), rgba(4, 9, 19, 0.82)),
-                        radial-gradient(circle at 10% 0%, rgba(40, 231, 255, 0.11), transparent 46%);
-                    border: 1px solid rgba(35, 226, 255, 0.5);
-                    border-radius: 2px;
-                    box-shadow:
-                        0 20px 50px rgba(0, 0, 0, 0.46),
-                        inset 0 0 0 1px rgba(255, 255, 255, 0.04),
-                        0 0 24px rgba(27, 219, 255, 0.09);
-                    backdrop-filter: blur(14px) saturate(135%);
-                    -webkit-backdrop-filter: blur(14px) saturate(135%);
-                    opacity: 0;
-                    transform: translate3d(0, 12px, 0) scale(0.985);
-                    animation: cardConstruct 400ms var(--card-delay) cubic-bezier(0.19, 1, 0.22, 1) forwards;
                 }
 
-                :global(.calloutCard::before) {
+                .resumeCell {
+                    display: grid;
+                    align-content: center;
+                    gap: 7px;
+                    min-width: 0;
+                    padding: clamp(13px, 1.55vw, 18px);
+                    border-right: 1px solid rgba(255, 255, 255, 0.12);
+                    border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+                    background: transparent;
+                    opacity: 0;
+                    transform: translate3d(0, 12px, 0);
+                    animation: surfaceModuleIn 520ms var(--module-delay) cubic-bezier(0.19, 1, 0.22, 1) forwards;
+                }
+
+                .resumeCell:nth-child(2n) {
+                    border-right: 0;
+                }
+
+                .resumeCell:nth-last-child(-n + 2) {
+                    border-bottom: 0;
+                }
+
+                .coreBriefOverlay.exiting .resumeCell {
+                    animation: surfaceModuleOut 240ms ease forwards;
+                }
+
+                .resumeLabel {
+                    width: max-content;
+                    max-width: 100%;
+                    color: rgba(255, 232, 186, 0.82);
+                    font-size: 0.58rem;
+                    font-weight: 900;
+                    letter-spacing: 0.18em;
+                    line-height: 1;
+                    text-transform: uppercase;
+                    text-shadow: 0 2px 12px rgba(0, 0, 0, 0.66);
+                }
+
+                .resumeCell h3 {
+                    margin: 0;
+                    color: #ffffff;
+                    font-size: clamp(0.96rem, 1.2vw, 1.16rem);
+                    line-height: 1.12;
+                    font-weight: 840;
+                    letter-spacing: 0;
+                    text-shadow: 0 2px 12px rgba(0, 0, 0, 0.45);
+                }
+
+                .resumeCell p {
+                    margin: 0;
+                    color: rgba(255, 255, 255, 0.84);
+                    font-size: clamp(0.7rem, 0.88vw, 0.8rem);
+                    line-height: 1.32;
+                    font-weight: 620;
+                    text-shadow: 0 2px 14px rgba(0, 0, 0, 0.62);
+                }
+
+                .resumeCell ul {
+                    display: grid;
+                    gap: 6px;
+                    margin: 0;
+                    padding: 0;
+                    list-style: none;
+                }
+
+                .resumeCell li {
+                    position: relative;
+                    padding-left: 18px;
+                    color: rgba(255, 255, 255, 0.88);
+                    font-size: clamp(0.66rem, 0.82vw, 0.76rem);
+                    line-height: 1.3;
+                    font-weight: 560;
+                    text-shadow: 0 2px 14px rgba(0, 0, 0, 0.62);
+                }
+
+                .resumeCell li::before {
                     content: "";
                     position: absolute;
-                    left: 22px;
-                    right: 22px;
-                    top: 46px;
-                    height: 1px;
-                    background: linear-gradient(90deg, rgba(40, 232, 255, 0.26), rgba(255, 255, 255, 0.08), transparent);
-                    pointer-events: none;
+                    left: 3px;
+                    top: 0.35em;
+                    width: 8px;
+                    height: 5px;
+                    border-left: 2px solid color-mix(in srgb, var(--surface-accent), #6ee75f 38%);
+                    border-bottom: 2px solid color-mix(in srgb, var(--surface-accent), #6ee75f 38%);
+                    transform: rotate(-45deg);
                 }
 
-                :global(.calloutCard:hover) {
-                    border-color: rgba(35, 226, 255, 0.78);
-                    box-shadow: 0 24px 58px rgba(0, 0, 0, 0.46), 0 0 28px rgba(27, 219, 255, 0.16);
+                .resumeMiniTags,
+                .resumeStack {
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 6px;
                 }
 
-                :global(.categoryHub),
-                :global(.calloutCard) {
-                    min-height: var(--card-min-height);
+                .resumeMiniTags small,
+                .resumeStack small {
+                    display: inline-flex;
+                    align-items: center;
+                    min-height: 22px;
+                    padding: 5px 9px 4px;
+                    color: #fff3d7;
+                    font-size: clamp(0.62rem, 0.76vw, 0.7rem);
+                    font-weight: 760;
+                    line-height: 1;
+                    border: 1px solid color-mix(in srgb, var(--surface-accent), transparent 42%);
+                    border-radius: 999px;
+                    background: rgba(0, 0, 0, 0.28);
+                    text-shadow: 0 2px 10px rgba(0, 0, 0, 0.54);
                 }
 
-                :global(.calloutHeader) {
+                .resumeCell a {
+                    width: max-content;
+                    color: color-mix(in srgb, var(--surface-accent), white 20%);
+                    font-size: 0.56rem;
+                    font-weight: 900;
+                    letter-spacing: 0.12em;
+                    text-transform: uppercase;
+                    text-decoration: none;
+                    pointer-events: auto;
+                }
+
+                .surfaceHeader,
+                .surfaceBody {
+                    position: relative;
+                    z-index: 2;
+                }
+
+                .surfaceHeader {
                     display: flex;
                     align-items: center;
                     justify-content: space-between;
-                    gap: 12px;
-                    margin-bottom: 18px;
+                    gap: 16px;
+                    padding-bottom: 14px;
+                    border-bottom: 1px solid rgba(255, 255, 255, 0.14);
                 }
 
-                :global(.calloutHeader span) {
-                    color: #26f6d2;
-                    font-size: 0.68rem;
+                .surfaceHeader span,
+                .surfaceHeader b,
+                .surfaceEyebrow {
+                    font-size: 0.66rem;
                     font-weight: 900;
-                    letter-spacing: 0.22em;
+                    letter-spacing: 0.24em;
+                    line-height: 1;
                     text-transform: uppercase;
                 }
 
-                :global(.calloutHeader b) {
-                    color: rgba(255, 200, 122, 0.84);
-                    font-size: 0.66rem;
-                    letter-spacing: 0.12em;
-                    font-weight: 900;
+                .surfaceHeader span,
+                .surfaceEyebrow {
+                    color: color-mix(in srgb, var(--surface-accent), white 10%);
                 }
 
-                :global(.calloutCard h3) {
-                    margin: 0;
-                    color: #f7fbff;
-                    font-size: clamp(1.02rem, 1.35vw, 1.22rem);
-                    line-height: 1.12;
-                    font-weight: 850;
-                    letter-spacing: 0;
+                .surfaceHeader b {
+                    color: rgba(255, 255, 255, 0.82);
                 }
 
-                :global(.calloutSubtitle) {
-                    margin: 8px 0 0;
-                    color: rgba(216, 225, 240, 0.78);
-                    font-size: 0.82rem;
-                    line-height: 1.45;
-                    font-weight: 600;
-                }
-
-                :global(.calloutDetails) {
+                .surfaceBody {
                     display: grid;
-                    gap: 5px;
-                    margin-top: 10px;
+                    grid-template-columns: minmax(340px, 0.92fr) minmax(480px, 1.08fr);
+                    gap: clamp(24px, 3.2vw, 48px);
+                    align-items: center;
                 }
 
-                :global(.calloutDetails p) {
-                    position: relative;
+                .surfaceIdentity {
+                    display: grid;
+                    align-content: center;
+                    gap: 13px;
+                    min-width: 0;
+                }
+
+                .surfaceIdentity h2 {
+                    max-width: min(760px, 100%);
                     margin: 0;
-                    padding-left: 13px;
-                    color: rgba(226, 235, 248, 0.66);
-                    font-size: 0.72rem;
-                    line-height: 1.52;
-                    font-weight: 420;
+                    color: #ffffff;
+                    font-size: clamp(2.35rem, 4.2vw, 4.35rem);
+                    line-height: 0.98;
+                    font-weight: 940;
+                    letter-spacing: 0;
+                    text-shadow: 0 16px 60px rgba(0, 0, 0, 0.42);
                 }
 
-                :global(.calloutDetails p::before) {
+                .surfaceIdentity h2.singleLineTitle {
+                    font-size: clamp(3rem, 5.6vw, 6.2rem);
+                    white-space: nowrap;
+                }
+
+                .surfaceIdentity p {
+                    max-width: 560px;
+                    margin: 0;
+                    color: rgba(245, 249, 255, 0.76);
+                    font-size: clamp(0.92rem, 1.4vw, 1.08rem);
+                    line-height: 1.58;
+                    font-weight: 650;
+                }
+
+                .surfaceImpact {
+                    position: relative;
+                    display: grid;
+                    gap: 6px;
+                    margin-top: 6px;
+                    padding: 16px 18px;
+                    color: rgba(240, 248, 255, 0.9);
+                    border-left: 2px solid color-mix(in srgb, var(--surface-accent), white 10%);
+                    background:
+                        linear-gradient(90deg, rgba(0, 0, 0, 0.34), rgba(255, 255, 255, 0.045)),
+                        rgba(0, 0, 0, 0.14);
+                    font-style: normal;
+                }
+
+                .surfaceImpact span {
+                    color: color-mix(in srgb, var(--surface-accent), white 8%);
+                    font-size: 0.58rem;
+                    font-weight: 900;
+                    letter-spacing: 0.18em;
+                    text-transform: uppercase;
+                }
+
+                .surfaceImpact b {
+                    color: rgba(246, 250, 255, 0.9);
+                    font-size: 0.86rem;
+                    line-height: 1.5;
+                    font-weight: 740;
+                }
+
+                .surfaceTags {
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 8px;
+                    margin-top: 4px;
+                }
+
+                .surfaceTag {
+                    position: relative;
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 7px;
+                    min-height: 26px;
+                    padding: 7px 12px 6px;
+                    color: rgba(255, 255, 255, 0.9);
+                    font-size: 0.62rem;
+                    font-weight: 860;
+                    line-height: 1;
+                    letter-spacing: 0.08em;
+                    text-transform: uppercase;
+                    border: 1px solid rgba(255, 255, 255, 0.22);
+                    border-radius: 999px;
+                    background:
+                        linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(0, 0, 0, 0.18)),
+                        color-mix(in srgb, var(--surface-accent), transparent 86%);
+                    box-shadow:
+                        inset 0 0 0 1px rgba(255, 255, 255, 0.035),
+                        0 8px 20px rgba(0, 0, 0, 0.12);
+                }
+
+                .surfaceTag::before {
                     content: "";
-                    position: absolute;
-                    left: 0;
-                    top: 0.6em;
                     width: 5px;
                     height: 5px;
                     border-radius: 50%;
-                    background: rgba(129, 195, 255, 0.82);
-                    box-shadow: 0 0 10px rgba(129, 195, 255, 0.72);
+                    background: color-mix(in srgb, var(--surface-accent), white 12%);
+                    box-shadow: 0 0 10px var(--surface-glow);
                 }
 
-                :global(.typeLine) {
+                .surfaceModules {
+                    display: grid;
+                    grid-template-columns: 1fr;
+                    gap: 10px;
+                    align-content: center;
+                }
+
+                .surfaceModule {
+                    min-width: 0;
+                    display: grid;
+                    grid-template-columns: 1fr;
+                    grid-template-areas:
+                        "label"
+                        "title"
+                        "subtitle"
+                        "tags"
+                        "points"
+                        "link";
+                    gap: 8px;
+                    align-content: start;
+                    padding: 16px 17px;
+                    border: 1px solid rgba(255, 255, 255, 0.14);
+                    border-left: 2px solid color-mix(in srgb, var(--surface-accent), white 4%);
+                    background:
+                        linear-gradient(105deg, rgba(4, 9, 18, 0.58), rgba(0, 0, 0, 0.26)),
+                        rgba(255, 255, 255, 0.035);
+                    box-shadow:
+                        inset 0 1px 0 rgba(255, 255, 255, 0.06),
+                        0 12px 30px rgba(0, 0, 0, 0.16);
+                    opacity: 0;
+                    transform: translate3d(0, 14px, 0);
+                    animation: surfaceModuleIn 520ms var(--module-delay) cubic-bezier(0.19, 1, 0.22, 1) forwards;
+                }
+
+                .coreBriefOverlay.exiting .surfaceModule {
+                    animation: surfaceModuleOut 240ms ease forwards;
+                }
+
+                .surfaceModule span {
+                    grid-area: label;
+                    width: max-content;
+                    max-width: 100%;
+                    padding: 7px 10px 6px;
+                    color: color-mix(in srgb, var(--surface-accent), white 8%);
+                    font-size: 0.56rem;
+                    font-weight: 900;
+                    letter-spacing: 0.18em;
+                    text-transform: uppercase;
+                    border: 1px solid color-mix(in srgb, var(--surface-accent), transparent 58%);
+                    border-radius: 999px;
+                    background:
+                        linear-gradient(180deg, rgba(255, 255, 255, 0.1), rgba(0, 0, 0, 0.16)),
+                        color-mix(in srgb, var(--surface-accent), transparent 88%);
+                }
+
+                .surfaceModule h3 {
+                    grid-area: title;
+                    margin: 0;
+                    color: #ffffff;
+                    font-size: clamp(1rem, 1.35vw, 1.24rem);
+                    line-height: 1.12;
+                    font-weight: 880;
+                    letter-spacing: 0;
+                }
+
+                .surfaceModule p {
+                    grid-area: subtitle;
+                    margin: 0;
+                    color: rgba(241, 246, 255, 0.66);
+                    font-size: 0.72rem;
+                    line-height: 1.45;
+                    font-weight: 650;
+                }
+
+                .moduleTags {
+                    grid-area: tags;
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 6px;
+                }
+
+                .moduleTags small {
+                    display: inline-flex;
+                    align-items: center;
+                    min-height: 20px;
+                    padding: 4px 7px 3px;
+                    color: rgba(255, 255, 255, 0.78);
+                    font-size: 0.54rem;
+                    font-weight: 850;
+                    letter-spacing: 0.08em;
+                    line-height: 1;
+                    text-transform: uppercase;
+                    border: 1px solid rgba(255, 255, 255, 0.13);
+                    background: rgba(0, 0, 0, 0.18);
+                }
+
+                .surfaceModule ul {
+                    grid-area: points;
+                    display: grid;
+                    gap: 6px;
+                    margin: 0;
+                    padding: 0;
+                    list-style: none;
+                }
+
+                .surfaceModule li {
+                    position: relative;
+                    padding-left: 12px;
+                    color: rgba(245, 249, 255, 0.72);
+                    font-size: 0.72rem;
+                    line-height: 1.42;
+                    font-weight: 520;
+                }
+
+                .surfaceModule li::before {
+                    content: "";
+                    position: absolute;
+                    left: 0;
+                    top: 0.58em;
+                    width: 4px;
+                    height: 4px;
+                    border-radius: 50%;
+                    background: color-mix(in srgb, var(--surface-accent), white 12%);
+                    box-shadow: 0 0 10px var(--surface-glow);
+                }
+
+                .surfaceModule a {
+                    grid-area: link;
+                    width: max-content;
+                    margin-top: 2px;
+                    color: color-mix(in srgb, var(--surface-accent), white 12%);
+                    font-size: 0.62rem;
+                    font-weight: 900;
+                    letter-spacing: 0.14em;
+                    text-transform: uppercase;
+                    text-decoration: none;
+                    pointer-events: auto;
+                }
+
+                .typeLine {
                     display: block;
                     max-width: 100%;
                     opacity: 0;
                     clip-path: inset(0 100% 0 0);
-                    animation: textType 560ms steps(28, end) forwards;
-                    animation-delay: calc(var(--card-delay, 0ms) + 220ms);
+                    animation: textType 560ms steps(30, end) forwards;
+                    animation-delay: var(--text-delay, 620ms);
                 }
 
-                :global(.calloutHeader .typeLine:nth-child(2)) {
-                    animation-delay: calc(var(--card-delay, 0ms) + 260ms);
+                .coreBriefOverlay.exiting .typeLine {
+                    animation: textOut 220ms ease forwards;
                 }
 
-                :global(.calloutCard h3.typeLine),
-                :global(.categoryHub h2.typeLine) {
-                    animation-delay: calc(var(--card-delay, 0ms) + 340ms);
-                }
-
-                :global(.calloutSubtitle.typeLine),
-                :global(.categoryHub p.typeLine) {
-                    animation-delay: calc(var(--card-delay, 0ms) + 470ms);
-                }
-
-                :global(.categoryHub b.typeLine) {
-                    animation-delay: calc(var(--card-delay, 0ms) + 610ms);
-                }
-
-                :global(.calloutDetails p.typeLine) {
-                    animation-delay: var(--text-delay, calc(var(--card-delay, 0ms) + 610ms));
-                }
-
-                .chapterRail {
-                    position: absolute;
-                    left: 50%;
-                    bottom: 31px;
-                    display: flex;
-                    gap: 10px;
-                    transform: translateX(-50%);
-                }
-
-                .chapterRail span {
-                    width: 20px;
-                    height: 2px;
-                    border-radius: 999px;
-                    background: rgba(180, 211, 255, 0.2);
-                    transition: width 320ms ease, background 320ms ease, box-shadow 320ms ease;
-                }
-
-                .chapterRail span.active {
-                    width: 44px;
-                    background: rgba(255, 212, 132, 0.92);
-                    box-shadow: 0 0 18px rgba(255, 197, 110, 0.58);
-                }
-
-                .initialExploreHint {
+                .coreHint,
+                .exploreHint {
                     position: fixed;
                     left: 50%;
                     bottom: 30px;
-                    z-index: 4;
+                    z-index: 7;
                     display: flex;
                     align-items: center;
                     gap: 14px;
@@ -681,7 +910,13 @@ export const SolarExplorer = () => {
                     animation: hintReveal 720ms 520ms ease forwards;
                 }
 
-                .hintText {
+                .coreHint {
+                    z-index: 8;
+                    animation-delay: 1280ms;
+                }
+
+                .hintText,
+                .coreHint b {
                     font-size: 0.68rem;
                     font-weight: 850;
                     letter-spacing: 0.24em;
@@ -691,14 +926,16 @@ export const SolarExplorer = () => {
                     white-space: nowrap;
                 }
 
-                .hintLine {
+                .hintLine,
+                .coreHint span {
                     position: relative;
                     width: clamp(70px, 10vw, 148px);
                     height: 10px;
                     overflow: hidden;
                 }
 
-                .hintLine::before {
+                .hintLine::before,
+                .coreHint span::before {
                     content: "";
                     position: absolute;
                     inset: 0;
@@ -707,76 +944,75 @@ export const SolarExplorer = () => {
                     filter: drop-shadow(0 0 10px rgba(56, 213, 255, 0.28));
                 }
 
-                .hintLine.left {
+                .hintLine.left,
+                .coreHint span:first-child {
                     transform: scaleX(-1);
                 }
 
-                @keyframes connectorDraw {
-                    from {
-                        opacity: 0;
-                        stroke-dashoffset: 42;
-                    }
+                .exploreHint.focused .hintText {
+                    color: rgba(255, 213, 142, 0.82);
+                }
+
+                @keyframes surfaceVignetteIn {
                     to {
                         opacity: 1;
-                        stroke-dashoffset: 0;
                     }
                 }
 
-                @keyframes connectorErase {
+                @keyframes surfaceVignetteOut {
                     from {
                         opacity: 1;
-                        stroke-dashoffset: 0;
                     }
                     to {
                         opacity: 0;
-                        stroke-dashoffset: 42;
                     }
                 }
 
-                @keyframes anchorFade {
-                    to {
+                @keyframes surfaceFlatten {
+                    0% {
                         opacity: 0;
-                        transform: scale(0.78);
+                        border-radius: 50%;
+                        transform: translate3d(0, 30px, 0) rotateX(64deg) scale(0.28);
+                        filter: blur(2px) brightness(1.18);
+                    }
+                    38% {
+                        opacity: 1;
+                        border-radius: 50%;
+                        transform: translate3d(0, 2px, 0) rotateX(34deg) scale(0.58);
+                    }
+                    100% {
+                        opacity: 1;
+                        border-radius: 24px;
+                        transform: translate3d(0, 0, 0) rotateX(0deg) scale(1);
+                        filter: blur(0) brightness(1);
                     }
                 }
 
-                @keyframes anchorPulse {
-                    0%, 100% {
-                        opacity: 0.4;
-                        transform: scale(0.9);
-                    }
-                    50% {
-                        opacity: 0.9;
-                        transform: scale(1.2);
-                    }
-                }
-
-                @keyframes badgeReveal {
+                @keyframes surfaceUnflatten {
                     from {
-                        opacity: 0;
-                        transform: translate3d(-8px, 8px, 0);
+                        opacity: 1;
+                        border-radius: 24px;
+                        transform: translate3d(0, 0, 0) rotateX(0deg) scale(1);
                     }
+                    to {
+                        opacity: 0;
+                        border-radius: 50%;
+                        transform: translate3d(0, 24px, 0) rotateX(58deg) scale(0.32);
+                        filter: blur(1.4px) brightness(1.18);
+                    }
+                }
+
+                @keyframes surfaceModuleIn {
                     to {
                         opacity: 1;
                         transform: translate3d(0, 0, 0);
                     }
                 }
 
-                @keyframes cardConstruct {
-                    to {
-                        opacity: 1;
-                        transform: translate3d(0, 0, 0) scale(1);
-                    }
-                }
-
-                @keyframes cardDismiss {
-                    from {
-                        opacity: 1;
-                        transform: translate3d(0, 0, 0) scale(1);
-                    }
+                @keyframes surfaceModuleOut {
                     to {
                         opacity: 0;
-                        transform: translate3d(0, 8px, 0) scale(0.985);
+                        transform: translate3d(0, 8px, 0);
                     }
                 }
 
@@ -791,6 +1027,13 @@ export const SolarExplorer = () => {
                     }
                 }
 
+                @keyframes textOut {
+                    to {
+                        opacity: 0;
+                        clip-path: inset(0 0 0 100%);
+                    }
+                }
+
                 @keyframes hintReveal {
                     from {
                         opacity: 0;
@@ -802,49 +1045,149 @@ export const SolarExplorer = () => {
                     }
                 }
 
-                @media (max-width: 760px) {
-                    .connectorLine {
-                        stroke-opacity: 0.26;
+                @media (max-width: 900px) {
+                    .flatSurface {
+                        width: calc(100vw - 28px);
+                        height: calc(100vh - 118px);
+                        min-height: 0;
+                        padding: 20px;
                     }
 
-                    :global(.categoryHub) {
-                        padding: 8px 10px;
+                    .resumeHero {
+                        grid-template-columns: auto 1fr;
                     }
 
-                    :global(.calloutCard) {
-                        min-height: 116px;
-                        padding: 14px 15px;
-                    }
-
-                    :global(.calloutDetails p) {
-                        font-size: 0.74rem;
-                    }
-
-                    .chapterRail {
-                        bottom: 20px;
-                        gap: 7px;
-                    }
-
-                    .chapterRail span {
-                        width: 13px;
-                    }
-
-                    .chapterRail span.active {
-                        width: 28px;
-                    }
-
-                    .initialExploreHint {
-                        bottom: 20px;
+                    .resumeMeta {
+                        grid-column: 1 / -1;
+                        justify-items: start;
+                        text-align: left;
+                        display: flex;
                         gap: 10px;
                     }
 
-                    .hintText {
+                    .resumeGrid {
+                        grid-template-columns: 1fr;
+                        grid-template-rows: none;
+                        overflow: hidden;
+                    }
+
+                    .resumeCell,
+                    .resumeCell:nth-child(2n),
+                    .resumeCell:nth-last-child(-n + 2) {
+                        border-right: 0;
+                        border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+                    }
+
+                    .resumeCell:last-child {
+                        border-bottom: 0;
+                    }
+
+                    .surfaceHeader {
+                        align-items: flex-start;
+                        flex-direction: column;
+                        gap: 7px;
+                    }
+
+                    .surfaceBody {
+                        grid-template-columns: 1fr;
+                        gap: 18px;
+                    }
+
+                    .surfaceModules {
+                        grid-template-columns: 1fr;
+                    }
+
+                    .surfaceModule {
+                        grid-template-columns: 1fr;
+                        grid-template-areas:
+                            "label"
+                            "title"
+                            "subtitle"
+                            "tags"
+                            "points"
+                            "link";
+                    }
+
+                    .surfaceIdentity {
+                        align-content: start;
+                    }
+                }
+
+                @media (max-width: 760px) {
+                    .flatSurface {
+                        max-height: calc(100vh - 90px);
+                        height: calc(100vh - 90px);
+                        min-height: 0;
+                        overflow: hidden;
+                        padding: 12px;
+                    }
+
+                    .resumeBoard {
+                        grid-template-rows: auto auto 1fr;
+                        overflow: hidden;
+                    }
+
+                    .surfaceIdentity h2 {
+                        font-size: clamp(2rem, 13vw, 3.15rem);
+                    }
+
+                    .surfaceIdentity h2.singleLineTitle {
+                        font-size: clamp(2.25rem, 11vw, 3.25rem);
+                        white-space: normal;
+                    }
+
+                    .resumeHero {
+                        gap: 12px;
+                        padding: 12px;
+                    }
+
+                    .resumeAvatar {
+                        width: 46px;
+                    }
+
+                    .resumeHeading h2,
+                    .resumeHeading h2.singleLineTitle {
+                        font-size: clamp(1.75rem, 8vw, 2.6rem);
+                        white-space: normal;
+                    }
+
+                    .resumeImpact {
+                        padding: 12px;
+                    }
+
+                    .resumeCell {
+                        padding: 12px;
+                        align-content: start;
+                    }
+
+                    .resumeGrid {
+                        overflow: auto;
+                    }
+
+                    .resumeGrid::-webkit-scrollbar {
+                        width: 4px;
+                    }
+
+                    .resumeGrid::-webkit-scrollbar-thumb {
+                        border-radius: 999px;
+                        background: color-mix(in srgb, var(--surface-accent), transparent 52%);
+                    }
+
+                    .coreHint,
+                    .exploreHint {
+                        bottom: 18px;
+                        gap: 10px;
+                    }
+
+                    .hintText,
+                    .coreHint b {
                         font-size: 0.58rem;
                         letter-spacing: 0.18em;
                     }
 
-                    .hintLine {
-                        width: 48px;
+                    .hintLine,
+                    .coreHint span {
+                        width: 44px;
                     }
                 }
             `}</style>

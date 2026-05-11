@@ -56,6 +56,8 @@ export class SolarSystemScene {
     private targetOrbitPitch = 0.62;
     private zoomDistanceOffset = 0;
     private targetZoomDistanceOffset = 0;
+    private coreDiveStrength = 0;
+    private targetCoreDiveStrength = 0;
 
     private smoothstep(value: number) {
         const clamped = THREE.MathUtils.clamp(value, 0, 1);
@@ -421,8 +423,11 @@ export class SolarSystemScene {
         const arrivalDistance = THREE.MathUtils.clamp(radius * (isMobile ? 12 : 10.5), isMobile ? 8 : 7, isMobile ? 74 : 96);
         const maxZoomDistance = THREE.MathUtils.clamp(radius * (isMobile ? 6.4 : 5.4), isMobile ? 4.8 : 3.8, isMobile ? 46 : 58);
         const baseFocusDistance = THREE.MathUtils.lerp(arrivalDistance, maxZoomDistance, focus.zoomStrength);
+        this.coreDiveStrength = THREE.MathUtils.lerp(this.coreDiveStrength, this.targetCoreDiveStrength, immediate ? 1 : 0.1);
+        const coreDiveDistance = THREE.MathUtils.clamp(radius * (isMobile ? 3.4 : 2.85), isMobile ? 4.2 : 3.2, isMobile ? 38 : 44);
+        const cameraBaseDistance = THREE.MathUtils.lerp(baseFocusDistance, coreDiveDistance, this.coreDiveStrength);
         this.zoomDistanceOffset = THREE.MathUtils.lerp(this.zoomDistanceOffset, this.targetZoomDistanceOffset, immediate ? 1 : 0.13);
-        const focusDistance = THREE.MathUtils.clamp(baseFocusDistance + this.zoomDistanceOffset, isMobile ? 6 : 4.8, isMobile ? 90 : 118);
+        const focusDistance = THREE.MathUtils.clamp(cameraBaseDistance + this.zoomDistanceOffset, isMobile ? 4.2 : 3.2, isMobile ? 90 : 118);
         this.orbitYaw = THREE.MathUtils.lerp(this.orbitYaw, this.targetOrbitYaw, immediate ? 1 : 0.12);
         this.orbitPitch = THREE.MathUtils.lerp(this.orbitPitch, this.targetOrbitPitch, immediate ? 1 : 0.12);
 
@@ -622,6 +627,10 @@ export class SolarSystemScene {
             -14,
             72
         );
+    }
+
+    public setCoreDiveStrength(strength: number) {
+        this.targetCoreDiveStrength = THREE.MathUtils.clamp(strength, 0, 1);
     }
 
     public orbitBy(deltaYaw: number, deltaPitch: number) {

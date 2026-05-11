@@ -1,13 +1,17 @@
 import gsap from 'gsap';
 import { SolarSystemScene } from '../components/SolarSystemScene';
 
+type CoreBriefChangeHandler = (open: boolean, planetIndex: number) => void;
+
 export class NavigationManager {
     private readonly sceneManager: SolarSystemScene;
     private readonly onPlanetChange?: (index: number) => void;
+    private readonly onCoreBriefChange?: CoreBriefChangeHandler;
     private readonly navigationState = { progress: 0 };
     private navigationTween: gsap.core.Tween | null = null;
     private targetProgress = 0;
     private currentStep = -1;
+    private coreBriefStage: 'idle' | 'open' | 'restored' = 'idle';
     private inputLockedUntil = 0;
     private wheelIntent = 0;
     private wheelResetId: number | null = null;
@@ -65,7 +69,8 @@ export class NavigationManager {
         if (step !== null) {
             this.currentStep = step;
         }
-        this.jumpNavigationProgress(progress);
+        this.closeCoreBrief('idle');
+        this.setNavigationProgress(progress, 1.65);
     };
 
     private readonly handleWheel = (event: WheelEvent) => {
@@ -111,9 +116,14 @@ export class NavigationManager {
         this.pressedKeys.delete(event.key.toLowerCase());
     };
 
-    constructor(sceneManager: SolarSystemScene, onPlanetChange?: (index: number) => void) {
+    constructor(
+        sceneManager: SolarSystemScene,
+        onPlanetChange?: (index: number) => void,
+        onCoreBriefChange?: CoreBriefChangeHandler
+    ) {
         this.sceneManager = sceneManager;
         this.onPlanetChange = onPlanetChange;
+        this.onCoreBriefChange = onCoreBriefChange;
         this.activePlanetIndex = sceneManager.getActivePlanetIndex();
         this.applyProgress(0);
         this.initInteractivity();
@@ -125,6 +135,11 @@ export class NavigationManager {
         if (planetIndex !== this.activePlanetIndex) {
             this.activePlanetIndex = planetIndex;
             this.onPlanetChange?.(planetIndex);
+            if (planetIndex === -1) {
+                this.closeCoreBrief('idle');
+            } else {
+                this.coreBriefStage = 'idle';
+            }
         }
     }
 
@@ -150,8 +165,27 @@ export class NavigationManager {
         let nextStep = this.currentStep;
 
         if (direction > 0) {
-            nextStep = this.currentStep >= lastStep ? -1 : this.currentStep + 1;
+            if (this.currentStep === -1) {
+                nextStep = 0;
+            } else if (this.coreBriefStage === 'idle') {
+                this.openCoreBrief();
+                this.inputLockedUntil = performance.now() + 760;
+                return;
+            } else if (this.coreBriefStage === 'open') {
+                this.closeCoreBrief('restored');
+                this.inputLockedUntil = performance.now() + 760;
+                return;
+            } else {
+                this.coreBriefStage = 'idle';
+                nextStep = this.currentStep >= lastStep ? -1 : this.currentStep + 1;
+            }
         } else {
+            if (this.coreBriefStage === 'open') {
+                this.closeCoreBrief('idle');
+                this.inputLockedUntil = performance.now() + 700;
+                return;
+            }
+            this.coreBriefStage = 'idle';
             nextStep = Math.max(-1, this.currentStep - 1);
         }
 
@@ -159,17 +193,38 @@ export class NavigationManager {
 
         if (nextStep === -1) {
             this.inputLockedUntil = performance.now() + 1250;
-            this.jumpNavigationProgress(0);
+            this.setNavigationProgress(0, 1.85);
             return;
         }
 
         this.setNavigationProgress(this.sceneManager.getProgressForFocusStep(nextStep), 2.15);
     }
 
+    private openCoreBrief() {
+        if (this.coreBriefStage === 'open') return;
+
+        this.coreBriefStage = 'open';
+        this.sceneManager.setCoreDiveStrength(1);
+        this.onCoreBriefChange?.(true, this.activePlanetIndex);
+    }
+
+    private closeCoreBrief(nextStage: 'idle' | 'restored') {
+        if (this.coreBriefStage !== 'open') {
+            this.coreBriefStage = nextStage;
+            this.sceneManager.setCoreDiveStrength(0);
+            return;
+        }
+
+        this.coreBriefStage = nextStage;
+        this.sceneManager.setCoreDiveStrength(0);
+        this.onCoreBriefChange?.(false, this.activePlanetIndex);
+    }
+
     private jumpNavigationProgress(progress: number) {
         this.targetProgress = gsap.utils.clamp(0, 1, progress);
         this.navigationTween?.kill();
         this.navigationTween = null;
+        this.closeCoreBrief('idle');
         this.navigationState.progress = this.targetProgress;
         this.applyProgress(this.targetProgress);
     }
