@@ -1,6 +1,7 @@
 'use client';
 
-import { CSSProperties, useEffect, useRef, useState } from 'react';
+import { CSSProperties, useEffect, useRef, useState, type TouchEvent, type WheelEvent } from 'react';
+import type { PointerEvent as ReactPointerEvent } from 'react';
 import { SolarSystemScene } from './SolarSystemScene';
 import { NavigationManager } from '../services/NavigationManager';
 import { PORTFOLIO_MISSION_DATA, PortfolioMissionChapter } from '../data/PortfolioMissionData';
@@ -44,22 +45,153 @@ const getActionLabel = (category: string) => {
 
 const isExternalHref = (href: string) => /^https?:\/\//.test(href);
 
+const getSurfaceScroller = (surface: HTMLElement) => surface.querySelector<HTMLElement>('.resumeGrid');
+
+const getScrollState = (scroller: HTMLElement | null) => {
+    if (!scroller) {
+        return {
+            canScroll: false,
+            atTop: true,
+            atBottom: true
+        };
+    }
+
+    const canScroll = scroller.scrollHeight > scroller.clientHeight + 2;
+
+    return {
+        canScroll,
+        atTop: scroller.scrollTop <= 2,
+        atBottom: scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 2
+    };
+};
+
 const CoreBrief = ({
     chapter,
     chapterIndex,
-    exiting
+    exiting,
+    onSurfaceNavigate,
+    onSurfaceRestore
 }: {
     chapter: PortfolioMissionChapter;
     chapterIndex: number;
     exiting: boolean;
-}) => (
-    <div
-        className={`coreBriefOverlay ${exiting ? 'exiting' : 'entering'}`}
-        style={getSurfaceStyle(chapterIndex)}
-    >
+    onSurfaceNavigate: (deltaY: number) => void;
+    onSurfaceRestore: () => void;
+}) => {
+    const touchStateRef = useRef({
+        startY: 0,
+        startedAtTop: true,
+        startedAtBottom: true
+    });
+    const wheelBoundaryRef = useRef({
+        direction: 0,
+        lastWheelAt: 0,
+        armed: false
+    });
+
+    const handleSurfaceWheel = (event: WheelEvent<HTMLElement>) => {
+        const modeMultiplier = event.deltaMode === 1 ? 16 : 1;
+        const deltaY = event.deltaY * modeMultiplier;
+        if (deltaY === 0) return;
+
+        const scroller = getSurfaceScroller(event.currentTarget);
+        const { canScroll, atTop, atBottom } = getScrollState(scroller);
+        const movingDown = deltaY > 0;
+        const shouldNavigate = !canScroll || (movingDown && atBottom) || (!movingDown && atTop);
+        const now = performance.now();
+        const direction = Math.sign(deltaY);
+        const wheelGap = now - wheelBoundaryRef.current.lastWheelAt;
+
+        if (!shouldNavigate) {
+            wheelBoundaryRef.current = {
+                direction: 0,
+                lastWheelAt: now,
+                armed: false
+            };
+            event.stopPropagation();
+            return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+
+        const isSeparateGesture = wheelBoundaryRef.current.armed
+            && wheelBoundaryRef.current.direction === direction
+            && wheelGap > 280;
+
+        if (!isSeparateGesture) {
+            wheelBoundaryRef.current = {
+                direction,
+                lastWheelAt: now,
+                armed: true
+            };
+            return;
+        }
+
+        wheelBoundaryRef.current = {
+            direction: 0,
+            lastWheelAt: now,
+            armed: false
+        };
+        onSurfaceNavigate(deltaY);
+    };
+
+    const handleSurfaceTouchStart = (event: TouchEvent<HTMLElement>) => {
+        const touch = event.touches[0];
+        if (!touch) return;
+
+        const scroller = getSurfaceScroller(event.currentTarget);
+        const { atTop, atBottom } = getScrollState(scroller);
+        touchStateRef.current = {
+            startY: touch.clientY,
+            startedAtTop: atTop,
+            startedAtBottom: atBottom
+        };
+    };
+
+    const handleSurfaceTouchEnd = (event: TouchEvent<HTMLElement>) => {
+        const touch = event.changedTouches[0];
+        if (!touch) return;
+
+        const deltaY = touchStateRef.current.startY - touch.clientY;
+        if (Math.abs(deltaY) < 46) return;
+
+        const movingDown = deltaY > 0;
+        const scroller = getSurfaceScroller(event.currentTarget);
+        const { canScroll, atTop, atBottom } = getScrollState(scroller);
+        const shouldNavigate = !canScroll
+            || (movingDown && atBottom && touchStateRef.current.startedAtBottom)
+            || (!movingDown && atTop && touchStateRef.current.startedAtTop);
+
+        if (shouldNavigate) {
+            onSurfaceNavigate(deltaY);
+        }
+    };
+
+    const handleOverlayPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+        const target = event.target as HTMLElement;
+        if (target.closest('.flatSurface')) return;
+
+        event.preventDefault();
+        event.stopPropagation();
+        onSurfaceRestore();
+    };
+
+    return (
+        <div
+            className={`coreBriefOverlay ${exiting ? 'exiting' : 'entering'}`}
+            style={getSurfaceStyle(chapterIndex)}
+            onPointerDown={handleOverlayPointerDown}
+        >
         <div className="surfaceVignette" />
 
-        <section className="flatSurface" aria-label={`${chapter.section} flat planet surface`}>
+        <section
+            className="flatSurface"
+            aria-label={`${chapter.section} flat planet surface`}
+            onWheel={handleSurfaceWheel}
+            onTouchStart={handleSurfaceTouchStart}
+            onTouchEnd={handleSurfaceTouchEnd}
+        >
             <div className="surfaceTexture" aria-hidden="true" />
             <div className="surfaceScan" aria-hidden="true" />
 
@@ -199,8 +331,9 @@ const CoreBrief = ({
             <b>Zoom to restore globe</b>
             <span />
         </div>
-    </div>
-);
+        </div>
+    );
+};
 
 export const SolarExplorer = () => {
     const containerRef = useRef<HTMLDivElement>(null);
@@ -217,6 +350,30 @@ export const SolarExplorer = () => {
     });
 
     const activeChapter = PORTFOLIO_MISSION_DATA[coreBrief.index] ?? PORTFOLIO_MISSION_DATA[0];
+
+    const handleSurfaceNavigate = (deltaY: number) => {
+        const nav = navRef.current;
+        if (!nav) return;
+
+        if (typeof nav.navigateFromSurfaceScroll === 'function') {
+            nav.navigateFromSurfaceScroll(deltaY);
+            return;
+        }
+
+        const legacyNav = nav as unknown as {
+            navigateByStep?: (direction: number) => void;
+        };
+        legacyNav.navigateByStep?.(-Math.sign(deltaY));
+    };
+
+    const handleSurfaceRestore = () => {
+        const nav = navRef.current;
+        if (!nav) return;
+
+        if (typeof nav.restoreFromSurface === 'function') {
+            nav.restoreFromSurface();
+        }
+    };
 
     useEffect(() => {
         if (!containerRef.current) return;
@@ -295,6 +452,8 @@ export const SolarExplorer = () => {
                     chapter={activeChapter}
                     chapterIndex={coreBrief.index}
                     exiting={coreBrief.exiting}
+                    onSurfaceNavigate={handleSurfaceNavigate}
+                    onSurfaceRestore={handleSurfaceRestore}
                     key={`${coreBrief.index}-${coreBrief.exiting ? 'out' : 'in'}`}
                 />
             ) : null}
@@ -323,7 +482,7 @@ export const SolarExplorer = () => {
                     display: grid;
                     place-items: center;
                     color: #edf7ff;
-                    pointer-events: none;
+                    pointer-events: auto;
                     perspective: 1400px;
                     font-family: var(--font-body);
                 }
@@ -371,6 +530,8 @@ export const SolarExplorer = () => {
                     opacity: 0;
                     transform-origin: center center;
                     animation: surfaceFlatten 900ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+                    pointer-events: auto;
+                    overscroll-behavior: contain;
                 }
 
                 .flatSurface::before,
@@ -1197,7 +1358,10 @@ export const SolarExplorer = () => {
                     .resumeGrid {
                         grid-template-columns: 1fr;
                         grid-template-rows: none;
-                        overflow: hidden;
+                        overflow-y: auto;
+                        overscroll-behavior: contain;
+                        -webkit-overflow-scrolling: touch;
+                        touch-action: pan-y;
                     }
 
                     .resumeCell,

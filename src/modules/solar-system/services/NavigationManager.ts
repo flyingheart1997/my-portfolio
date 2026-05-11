@@ -241,6 +241,34 @@ export class NavigationManager {
         this.applyProgress(this.targetProgress);
     }
 
+    public navigateFromSurfaceScroll(deltaY: number) {
+        const direction = -Math.sign(deltaY);
+        if (direction === 0) return;
+        if (this.coreBriefStage !== 'open') return;
+        if (performance.now() < this.inputLockedUntil) return;
+        if (this.navigationTween) return;
+
+        const now = performance.now();
+        if (now - this.lastWheelStepAt < 720) return;
+
+        this.lastWheelStepAt = now;
+        this.wheelIntent = 0;
+        if (this.wheelResetId !== null) {
+            window.clearTimeout(this.wheelResetId);
+            this.wheelResetId = null;
+        }
+        this.navigateByStep(direction);
+    }
+
+    public restoreFromSurface() {
+        if (this.coreBriefStage !== 'open') return;
+        if (performance.now() < this.inputLockedUntil) return;
+        if (this.navigationTween) return;
+
+        this.closeCoreBrief('restored');
+        this.inputLockedUntil = performance.now() + 1080;
+    }
+
     private startKeyboardLoop() {
         if (this.keyFrameId) return;
 
